@@ -736,7 +736,12 @@ class StigExec(Layer):
             return (age >= cd.get('first', 99)) and yld > 0, yld
         mx = cd.get('maxyield', 6)
         maxday = cd.get('maxday', 99)
-        r = yld >= mx or age > maxday or (age == maxday and t.get('watered_today'))
+        first = cd.get('first', 0)
+        # Engine HARVEST FAILS below first_yield_day even with yield banked
+        # (fert can push melon to 6 by age 9); acting on it camps the unit
+        # all day spamming no-ops AND pulls walkers map-wide via plant_need.
+        r = (yld >= mx or age > maxday or (age == maxday and t.get('watered_today'))) \
+            and age >= first
         return r and yld > 0, yld
 
     def plant_need(self, ctx, x, y, t):

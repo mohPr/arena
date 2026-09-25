@@ -1,10 +1,10 @@
-# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v2)
+# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v3)
 
 Base is a stigmergic executor (StigExec) + DSM-spec macro (Scheduler/MarketEmit,
 byte-identical to the frozen role-based base). Lineage in repo:
 `agent_base.py` -> `var_sched5.py` -> `var_sched6.py` -> `agent_prev_role.py`
 (role-based, 62k) -> STIG v1 (~90k, one-actor-per-tile) -> STIG v2 (same-day
-fert cash, this file). The role-based base is kept as `agent_prev_role.py` for
+fert cash) -> STIG v3 (harvest age-gate, this file). The role-based base is kept as `agent_prev_role.py` for
 A/B only — do not develop on it.
 `FINDINGS.md` + `SPEC.md` are older rate tables; `DSM_OS_SPEC.md` (mined replay
 STRUCTURE) + `STIG_DESIGN.md` (this base's design) + this file override them.
@@ -58,11 +58,17 @@ Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`
   `main_v60` (not in repo): margin -1838.
 
 ## Open stages (the work — all of it is yours)
-1. d6 wave cash: DONE for herd (d6 herd>=7 passes pinned 3/3, unpinned 2/3;
-   was 5-6 vs 7-12). OPEN for money: d5 ~$200-500 vs $750; d10/d12/d15 bands.
-2. Curve timing: d12/d15 bands. Money arrives d16+, not d10-15. Melon converts
-   now but yields stall 3-5 vs 6 (water/fert coverage d8-12 on the wall);
-   d10 money<2500 pinned x3 (wave spending eats the spike under mixed line).
+1. d6 wave cash: DONE for herd (d6 herd>=7 passes pinned 3/3, unpinned 2/3).
+   OPEN for money: d5 ~$200-500 vs $750; d10/d12/d15 bands.
+2. Curve timing: MELON SPIKE PART-DONE. Mined DSM recipe: 10 melons (6 d0+4 d1),
+   water EVERY melon EVERY day once age>=7 (yield window 6-12, +1/day, cap 6),
+   NEVER fert melon, harvest each at 6 (d0-cohort d10, d1-cohort d11-12), sell
+   same day (36/18/6). Our gaps: (a) FIXED v3 — harvest age-gate, see landed;
+   (b) OPEN — d9 water 3/11 + d11 water 2/7 on land/wave days (priority, not
+   crew: same ~10 units as DSM, ours spends them on PLACE/PICKUP); (c) OPEN —
+   wall completes d3-4 not d1 (d1 plants no melon: cash + Scheduler quote);
+   second cohort cash arrives d13-15 not d11-12 (~2-3 day curve shift);
+   (d) MINOR — d10 harvest 24 sell 18 (1-day carry lag; DSM 36/36 same day).
 3. d1 wandering: PART-DONE (d1 FEED 4, acts 39; mv/act still 4.67 — DSM idles
    (PASS) instead of trekking; ours treks, one day only).
 4. Terminal weeds (~46 by d27-29 on some seeds): late water coverage under max scale.
@@ -70,6 +76,13 @@ Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`
    BEYOND DSM (DSM is the target to beat, not the ceiling).
 
 ## Recently landed (in the base — resubmitting any of these = instant reject)
+- Harvest age-gate (STIG v3, `ripe()`): non-ongoing crops need age>=first
+  (melon 10). Engine HARVEST fails below first_yield_day even with yield
+  banked; acting on it camped units all day spamming no-ops (d9: 6 acts on
+  one age-9 melon; d13: 50 HARVEST cmds on 5 tiles) AND pulled walkers
+  map-wide via plant_need scoring. Screen vs pipe19 pinned 200001-3:
+  49399/27649/62175 vs base 41052/29340/54204 = **+14627 total** (+8347/
+  -1691/+7971, clears the bar).
 - Same-day fert cash (STIG v2): FERTILIZER banks intraday (was pockets-only
   till the nightly auto-drop, delaying all fert cash a full day) + a d1-only
   fert>=2 shed trip. d1 FEED 0->4, d6 herd 5-6->7+, pinned total +5754
@@ -91,6 +104,10 @@ Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`
   batch 6; d2/d3 melon catch-up; d0 trickle caps; hire burst; feed_cap; `_fib` fix.
 
 ## Rejected (never re-propose, all A/B'd negative or byte-identical)
+- Never-fert-melon: -5186 total (-12110/+1220/+5704). Lesson: fert is our
+  water-miss crutch (d9/d11 collapses) — removing it before fixing coverage
+  caps the wall at 3-4. DSM never ferts because DSM never misses water.
+  Sequence is coverage FIRST (Stage 2b), fert removal after.
 - Unconditional fert shuttle (fert>=2 trip all game): early fixed but wave
   3 days late + late labor tax, -8.7k pinned total.
 - Crisis-gated fert trip (unfed + no shed wheat): gate too strict when broke
