@@ -614,6 +614,16 @@ class MarketEmit(Layer):
                     st['req'][bought_key] = int(st['req'].get(bought_key, 0) or 0) + n
         # 3) consumables: request-counted slices. Never fully gated — seed/feed
         #    purchases ARE the income loop; only trim qty when cash is thin.
+        #    HUNGER GATE (d2 lesson, seed-0: the d2 melon top-up $320 ate the
+        #    fert-sale cash while 3/5 head sat cu=1 with 0 shed wheat; 1 feed
+        #    all day, 3rd sheep escaped): escape-risk animals + empty wheat
+        #    shelf => seeds wait, wheat+hires only. Lifts itself when fed.
+        try:
+            hungry = any('animal' in t and int(t.get('consecutive_unfed', 0) or 0) >= 1
+                         for _, _, t in ctx.structs)
+        except Exception:
+            hungry = False
+        starving = hungry and int(ctx.shed.get('WHEAT', 0) or 0) < sum(ctx.herd.values())
         for k, item, qty in st.get('shop', []):
             if len(orders) >= 10:
                 break
@@ -640,6 +650,8 @@ class MarketEmit(Layer):
                 # P9+M6+WS15 by ~h10 with sales between every buy.
                 if ctx.day == 0:
                     cap = 2
+                elif starving and item == 'WHEAT':
+                    cap = 20  # hunger: full wheat quota at once, no trickle
                 else:
                     cap = 20 if ctx.money >= 2000 else (6 if ctx.money >= 400 else 2)
                 # One BUY order carries any qty; remaining order slots gate
@@ -657,8 +669,13 @@ class MarketEmit(Layer):
                 SEEDCAP = {'WHEAT': 20, 'CARROT': 10, 'TOMATO': 8, 'STRAWBERRY': 14, 'MELON': 14}
                 if int(ctx.seeds.get(item, 0) or 0) >= SEEDCAP.get(item, 10):
                     continue
+                # hunger gate (soft): escape-risk + empty shelf => seeds
+                # trickle to 1 while wheat flows full (a hard skip stalled the
+                # seed-2 melon wall at 7-10/12: -$13k).
                 if ctx.day == 0:
                     cap = 2  # d0 trickle (see P-block note)
+                elif starving:
+                    cap = 1
                 else:
                     cap = 10 if ctx.money >= 1500 else (4 if ctx.money >= 400 else 2)
                 n = min(qty - done, cap)
@@ -677,1334 +694,410 @@ class MarketEmit(Layer):
         ctx.orders = orders
         T['market_orders'] += len(orders)
 
-# ---- executor: sticky-assignment field loop ----
-# Greedy-nearest re-planned each step livelocks (units oscillate: 1652 walks,
-# 26 plants). Assignments persist in STATE until done or invalid.
-# ---- executor: role-separated field loop (clean rewrite) ----
-# Day-start role assignment splits the crew into two DISJOINT roles so FEED/CARE
-# can no longer steal the planting crew. That theft was the single bug every
-# greedy variant shared: on d0 all 6 units rush 4 animals, nobody plants, and
-# the farm ends d0 with 9 plants instead of Boey's 20 -- which IS the d10
-# payday gap.
-#
-#   animal units (1-3): PLACE, FEED->CARE, CAPHARV, HARVEST-animal,
-#                       COLLECT/apply FERTILIZER, BUILD, PKA. Self-contained:
-#                       nothing the herd needs lives outside this role.
-#   crop units (rest + the farmer): a column-locked PLANT->WATER->HARVEST->DIG
-#                       sweep. NEVER touch an animal, so the sweep cannot be
-#                       starved. Idle animal units help crops (bonus, not theft).
-#
-# Engine truths this relies on (verified in kaggriculture.py):
-#   * pending_care_bonus += 1 only when fed_today AND cared_today; pays out
-#     1+bonus at production, capped at max_held, and ONLY if fed that day.
-#     => CARE same-day as FEED is a 3x/4x/2x multiplier, not a nicety.
-#   * stored yield stops at max_held (6 cow/sheep, 4 goose): a full tile
-#     wastes tonight's production entirely => harvest before the cap (CAPHARV).
-#   * consecutive_unfed >= 2 escapes; >=1 today + unfed today = gone tonight.
-#   * PLANT requests are atomic per crop: over-requesting seeds drops ALL of
-#     that crop's PLANTs to PASS => per-step shared seed budget.
-#   * a plant unwatered two days running dies into a WEED => water before plant.
-#   * hands reset nightly => roles are recomputed at every dawn.
+# new_agent STIG v1 — stigmergic field executor (see STIG_DESIGN.md + DSM_OS_SPEC.md).
+# Macro layers above (Ctx/Scheduler/MarketEmit) are byte-identical to agent.py v0.1
+# frozen base. ONLY the field layer below is new. No roles, no columns, no claims.
 
-ANIMAL_MAXHELD = {'GOOSE': 4, 'COW': 6, 'SHEEP': 6}
-
-# ---- fertilizer pipeline (P1/P2): collect en-route, apply from the pocket,
-# never let fert touch the shed (the market sweeps it at dawn and a DROP
-# buries it -- the two root causes of FERTILIZE 0/day) ----
-ENROUTE_ON  = True     # P1: spend walk steps on work the tile underfoot needs
-ENROUTE_MAX = 3        # opportunistic actions per crop unit per day
-FERT_ON     = True     # P2: apply carried fert to a plant worth the hurdle
-FERT_CARRY  = 4        # max FERTILIZER a crop unit holds
-FERT_HURDLE = 1.20     # apply only if crop gain x price > hurdle x fert price
-FERT_MIN_DAY = 9       # DSM embargo: no field fert before d9 (it sells then)
-
-# A/B flag: feed stride (skip cu==0/yield==0 feeds at herd>=10).
-# A/B 5-seed: ON 22983 vs OFF 22887 -- net zero with high variance, and it
-# forfeits banked CARE income. OFF until labor accounting proves otherwise.
-STRIDE_ON = False
-
-# A/B flag: goose line (reserve 1 animal-buy slot/day for GOOSE d6-21).
-# FEED=1 wheat/animal/day ALL species (engine-verified: _inv_take WHEAT 1):
-# goose margin ~= 2*egg - 1*wheat ~= +$78-98/d even glutted, first yield d4,
-# most glut-robust product. Geese substitute inside the existing herd cap
-# (room formula counts all species), so no extra wheat demand vs current mix.
-# STATUS: ON+afford-gate scored 32.9k vs 40.4k OFF (feed-delivery ceiling:
-# bigger landing herds need ~10 steps/visit, 4 units x 24 steps can't cover
-# 15+ head + dump trips -> chronic 1-3 shortfall -> escapes). OFF until the
-# delivery ceiling is fixed; see BUY_SEASON below.
+# A/B flags referenced by the copied MarketEmit (both OFF, matching frozen base).
 GOOSE_LINE_ON = False
-
-# A/B flag: affordability gate on BUY_ANIMAL emission (cash + shed space).
-# Diagnosed a REAL bug (200002: room opened on $233, 4 broke emissions burned
-# the emission-counted daycap, funded afternoon bought nothing, -18k), but
-# the fix EXPOSES the feed-delivery ceiling: every emission lands -> herds
-# outgrow delivery -> escapes (gate-only 24.5k vs 40.4k). OFF until paired
-# with a demand-side fix (buy season / feed capacity). Kept for the combo.
 AFFORD_GATE_ON = False
 
+STIG_RADIUS = 3       # 94% of DSM inter-action gaps are <= 2 moves
+STIG_PERSIST = 1.5    # directional bonus: DSM same-direction persistence 46%
+STIG_DIST_W = 2.0     # distance-dominated scoring: value gaps must not drag the
+        # whole crew to one tile (14-unit herd watered (8,2) 13x on seed-0 d10).
+        # Nearest-work-first keeps units spread; only val>=9 pierces the radius.
+STIG_BANK_LOAD = 8    # carrying this much produce -> shed becomes top target
+STIG_WHEAT_CARRY = 4  # DSM PICKUP WHEAT amounts cluster 2-4
+STIG_FERT_DAY = 9     # DSM embargo: no field fert before d9 (it sells then)
 
-class FieldExec(Layer):
-    NAME = 'field'
-    SHED_TILES = {(4, 4), (5, 4), (4, 5), (5, 5)}
+
+class StigExec(Layer):
+    NAME = 'stig'
 
     def tile_at(self, ctx, x, y):
         try:
-            return ctx.tiles[y][x]
+            row = ctx.tiles[y]
         except Exception:
-            return 'LOCKED'
-
-    def free_tile(self, ctx, taken, p):
-        # compact farm: prefer tiles near the shed (short supply trips), then
-        # near the unit.
-        cands = [t for t in ctx.empty_tiles if t not in taken]
-        if not cands:
             return None
-        return min(cands, key=lambda t: (manhattan(t, (4, 4)) * 4 + manhattan(p, t)))
+        try:
+            return row[x]
+        except Exception:
+            return None
 
-    # ---------------- fertilizer pipeline (P1 collect / P2 apply) ----------------
-    def _claimed_by_other(self, st, key, idx):
-        for store in ('claim', 'aclaim'):
-            d = st.get(store)
-            if not isinstance(d, dict):
-                continue
-            for owner, c in d.items():
-                if owner == idx or not c:
-                    continue
+    def ripe(self, ctx, t):
+        try:
+            cd = CROPS.get(t.get('crop'), {})
+            age = ctx.day - int(t.get('planted_day', 0) or 0)
+            yld = int(t.get('yield_units', 0) or 0)
+        except Exception:
+            return False, 0
+        if cd.get('ongoing'):
+            return (age >= cd.get('first', 99)) and yld > 0, yld
+        mx = cd.get('maxyield', 6)
+        maxday = cd.get('maxday', 99)
+        r = yld >= mx or age > maxday or (age == maxday and t.get('watered_today'))
+        return r and yld > 0, yld
+
+    def plant_need(self, ctx, x, y, t):
+        """(value, kind) for a plant tile, 0 if nothing to do."""
+        r, yld = self.ripe(ctx, t)
+        if r:
+            return 8.0, 'HARVEST'
+        if not t.get('watered_today'):
+            cu = int(t.get('consecutive_unwatered', 0) or 0)
+            return (10.0 if cu >= 1 else 5.0), 'WATER'
+        return 0.0, None
+
+    def struct_need(self, ctx, x, y, t, inv):
+        """(value, cmd) for an animal structure, 0 if nothing to do.
+        FEED needs pocket wheat; CARE/COLLECT/HARVEST never do (a wheat-less
+        unit must still visit: collect-fert is the broke-day income that buys
+        tomorrow's wheat). No NEED_WHEAT blindness, ever."""
+        if t.get('animal') is None:
+            return 0.0, None
+        wheat = int(inv.get('WHEAT', 0) or 0)
+        if not t.get('fed_today'):
+            if wheat > 0:
+                cu = int(t.get('consecutive_unfed', 0) or 0)
+                return (10.0 if cu >= 1 else 7.0), 'FEED'
+        try:
+            yld = int(t.get('yield_units', 0) or 0)
+        except Exception:
+            yld = 0
+        mh = ANIMAL_MAXHELD.get(t.get('animal'), 6)
+        if t.get('fed_today') and not t.get('cared_today') and yld < mh:
+            return 5.0, 'CARE'
+        if t.get('fertilizer_available'):
+            return 4.5, 'COLLECT_FERTILIZER'
+        if yld > 0:
+            return 8.0, 'HARVEST'
+        if not t.get('fed_today'):
+            return 3.0, 'VISIT'  # no wheat: still worth walking over (collect next)
+        return 0.0, None
+
+    def run(self, ctx):
+        st = getst(ctx.seat)
+        sg = st.setdefault('stig', {})
+        if sg.get('day') != ctx.day:
+            sg['day'] = ctx.day
+            sg['dirs'] = {}
+        dirs = sg['dirs']
+        taken = set()
+        n = 1 + len(ctx.hands)
+        invs = [dict(inv or {}) for inv in ctx.invs]
+        while len(invs) < n:
+            invs.append({})
+        shed_left = dict(ctx.shed)
+        seeds_left = dict(ctx.seeds)
+        tgts = dict(st.get('crops', {}) or {})
+
+        def produce_load(inv):
+            return sum(int(v or 0) for k, v in inv.items()
+                       if k in ('CARROT', 'TOMATO', 'STRAWBERRY', 'MELON', 'EGG',
+                                'MILK', 'WOOL', 'WHEAT'))
+
+        for i in range(n):
+            p = list(ctx.farmer) if i == 0 else list(ctx.hands[i - 1])
+            inv = invs[i]
+            cmd = self.unit_cmd(ctx, st, sg, dirs, taken, i, p, inv, invs,
+                                shed_left, seeds_left, tgts)
+            if cmd is None:
+                cmd = ['PASS']
+            ctx.unit_cmds[i] = cmd
+            T['exec_tasks']['stig_' + cmd[0]] = T['exec_tasks'].get('stig_' + cmd[0], 0) + 1
+
+    # ---------------- per-unit policy ----------------
+    def unit_cmd(self, ctx, st, sg, dirs, taken, i, p, inv, invs,
+                 shed_left, seeds_left, tgts):
+        x, y = int(p[0]), int(p[1])
+        t = self.tile_at(ctx, x, y)
+        on_shed = (x, y) in SHED_TILES_SET
+        # One actor per tile per step (shed excepted: shed_act has its own
+        # budgets). Without this the crew piles onto the top-value tile and
+        # 11/12 actions no-op (d10: 14 units WATERed (8,2) 13x; d13: 50
+        # HARVEST cmds on 5 melon tiles). Chains survive: taken resets steps.
+        claimed = (x, y) in taken and not on_shed
+        # 1) on-tile animal work
+        if not claimed and isinstance(t, dict) and t.get('animal') is not None:
+            if not t.get('fed_today') and int(inv.get('WHEAT', 0) or 0) > 0:
+                inv['WHEAT'] = int(inv.get('WHEAT', 0) or 0) - 1
+                taken.add((x, y))
+                return ['FEED']
+            if t.get('fed_today') and not t.get('cared_today'):
                 try:
-                    if (c[0], c[1]) == key:
-                        return True
+                    yld = int(t.get('yield_units', 0) or 0)
                 except Exception:
-                    continue
-        return False
-
-    def enroute_cmd(self, ctx, st, idx, pos, tgt):
-        """P1: a crop unit mid-walk is standing on a real tile every step.
-        Spend that step on work the tile needs WITHOUT releasing the claim,
-        so the unit arrives one step later at the same destination. Converts
-        a WALK step into an ACTION step. The COOP/PASTURE branch is the
-        fertilizer supply: it COLLECTs straight into carried inventory,
-        bypassing the shed entirely (the market sweeps the shed at dawn and
-        a DROP buries protected stacks -- both root causes of FERTILIZE 0)."""
-        if not ENROUTE_ON or ctx.day >= 29:
-            return None
-        if tgt is not None and (pos[0], pos[1]) == (tgt[0], tgt[1]):
-            return None                      # on target: the normal path owns it
-        if st.get('erday') != ctx.day:
-            st['erday'] = ctx.day
-            st['erused'] = {}
-        if st.get('erstep') != ctx.step:
-            st['erstep'] = ctx.step
-            st['erseen'] = set()
-        if st['erused'].get(idx, 0) >= ENROUTE_MAX:
-            return None
-        if tgt is not None:
-            if manhattan(pos, tgt) + 1 > max(0, 23 - ctx.hour):
-                return None                  # no slack left: keep walking
-        key = (pos[0], pos[1])
-        if key in st['erseen'] or self._claimed_by_other(st, key, idx):
-            return None
-        t = self.tile_at(ctx, pos[0], pos[1])
-        if not isinstance(t, dict):
-            return None
-        inv = ctx.invs[idx] if idx < len(ctx.invs) else {}
-        kind = t.get('kind')
-        cmd = None
-        if kind == 'WEED':
-            cmd = ['DIG']
-        elif kind == 'PLANT':
-            if int(t.get('consecutive_unwatered', 0) or 0) >= 1 \
-                    and not t.get('watered_today'):
-                cmd = ['WATER']              # survival water: never a loss
-            elif (int(inv.get('FERTILIZER', 0) or 0) > 0
-                  and self.fert_gain(ctx, t) > 0
-                  and int(t.get('fertilized_until_day', -1) or -1) < ctx.day + 1):
-                cmd = ['FERTILIZE']
-        elif kind in ('COOP', 'PASTURE'):
-            # the only animal action a crop unit emits: reads/clears
-            # fertilizer_available only. No feed flag, no cared_today, no
-            # pending_care_bonus -- every gate the economy samples is intact.
-            if (FERT_ON and t.get('animal') is not None
-                    and t.get('fertilizer_available')
-                    and int(inv.get('FERTILIZER', 0) or 0) < FERT_CARRY
-                    and ctx.day >= FERT_MIN_DAY):
-                cmd = ['COLLECT_FERTILIZER']
-        if cmd is None:
-            return None
-        st['erseen'].add(key)
-        st['erused'][idx] = st['erused'].get(idx, 0) + 1
-        return cmd
-
-    def fert_gain(self, ctx, tile):
-        """Expected EXTRA units from fertilizing this plant right now
-        (engine: WATER banks +2 fert vs +1 unfert for one-shots inside the
-        window, line 442; ongoing banks 2 vs 1 at the production tick when
-        watered+fert, line 799; FERTILIZE covers day..day+2, line 481)."""
-        crop = tile.get('crop')
-        if crop is None or tile.get('kind') != 'PLANT':
-            return 0.0
-        if int(tile.get('fertilized_until_day', -1) or -1) >= ctx.day + 1:
-            return 0.0                       # still covered tomorrow
-        age = ctx.day - int(tile.get('planted_day', ctx.day) or 0)
-        held = int(tile.get('yield_units', 0) or 0)
-        cd = CROPS.get(crop, {})
-        if not cd.get('ongoing'):
-            maxday = int(cd.get('maxday', 99))
-            maxy = int(cd.get('maxyield', 6))
-            lo = (maxday + 1) // 2
-            if age < lo or age > maxday:
-                return 0.0                   # outside the bonus window
-            room = maxy - held
-            if room <= 0:
-                return 0.0
-            days = min(maxday - age + 1, 3)
-            return float(min(room, days))
-        first = int(cd.get('first', 99))
-        interval = max(1, int(cd.get('interval', 1)))
-        maxy = int(cd.get('maxyield', 4))
-        room = maxy - held
-        if room <= 0:
-            return 0.0
-        since = age - first
-        ticks = 0
-        for d in (0, 1, 2):
-            s = since + d
-            if s >= 0 and s % interval == 0:
-                ticks += 1
-        if ticks == 0:
-            return 0.0
-        return float(min(room, ticks))
-
-    def fert_cmd(self, ctx, st, idx, pos):
-        """P2: apply carried fert while standing on a plant the unit is
-        about to WATER anyway. FERTILIZE must land on an earlier STEP than
-        WATER (the engine reads fertilized_until_day at WATER time), so this
-        returns FERTILIZE now and the on-plant block returns WATER next step.
-        Zero movement; the claim is untouched."""
-        if not FERT_ON or ctx.day < FERT_MIN_DAY or ctx.day >= 29:
-            return None
-        inv = ctx.invs[idx] if idx < len(ctx.invs) else {}
-        if int(inv.get('FERTILIZER', 0) or 0) <= 0:
-            return None
-        t = self.tile_at(ctx, pos[0], pos[1])
-        if not t or t.get('kind') != 'PLANT':
-            return None
-        gain = self.fert_gain(ctx, t)
-        if gain <= 0:
-            return None
-        worth = gain * float(ctx.price(t.get('crop')) or 0)
-        if worth < FERT_HURDLE * float(ctx.price('FERTILIZER') or 0):
-            return None
-        return ['FERTILIZE']
-
-    # ---------------- role assignment (dawn; hands reset nightly) ----------------
-    def assign_roles(self, ctx, st, n_units):
-        placed = sum(1 for _, _, t in ctx.structs if t.get('animal') is not None)
-        owned = sum(ctx.owned.get(a, 0) for a in ANIMALS)
-        unplaced = max(0, owned - placed)
-        # FEED+CARE per animal ~= 3 unit-steps/day (2 actions + walk), plus
-        # placement ~= 4 each (PKA + walk + BUILD + PLACE), plus the fert loop.
-        # One unit gets ~10 useful animal-steps a day after its own commute, so
-        # size the crew that the whole herd is fed by mid-morning (the market's
-        # feed gate reads unfed status each step and blocks herd purchases
-        # while any animal is still hungry) and still has slack to place, care
-        # and collect. Under-sizing here made one unit the whole bottleneck.
-        total = placed + unplaced
-        nA = -(-(total * 3) // 10)
-        if unplaced:
-            # PLACEMENT BURST: an unplaced animal produces nothing yet still
-            # counts against `owned`, which fools the market's deficit logic
-            # into thinking the target is met. Size the burst to the backlog
-            # (throughput, not quota: pdone was removed so a unit places all
-            # day when the shed is full). d0 keeps ONE crop unit safe by the
-            # n_units-1 cap only; planting-first ordering (crop units fetch
-            # only when the sweep is clean) is what protects seedlings, not
-            # shrinking the animal crew -- shrinking it to 2 stalled waves at
-            # ~2 placed/day, backlog blocked buys, herd froze at ~12 head.
-            nA = max(nA, unplaced)
-        nA = min(nA, n_units - 1, 3)          # never take the last unit
-        if total >= 12:
-            # big herds need a 4th animal unit: 3 units x 24 steps cannot
-            # cover 12+ head x (feed+care+harvest+collect+walks). Idle animal
-            # units fall through to the crop sweep, so the 4th only costs
-            # when herd work actually exists (it does: feed < herd d12+).
-            nA = min(nA, n_units - 1, 4)
-        if (placed or unplaced) and nA < 2:
-            nA = 2
-        roles = {i: ('animal' if 0 < i <= nA else 'crop') for i in range(n_units)}
-        roles[0] = 'crop'   # farmer always sweeps (Boey's farmer: zero animal
-                            # logistics, first PLANT at t=6)
-        # spread crop units over distinct columns, shed-outward over ALL
-        # unlocked columns (shed at x=4,5). The old 4-(k%5) only covered the
-        # west half, so east-quadrant work fell to the global fallback sweep
-        # and units crossed the map for it.
-        unlocked = set()
-        H = len(ctx.tiles)
-        for y in range(H):
-            for x in range(len(ctx.tiles[y])):
-                if self.tile_at(ctx, x, y) != 'LOCKED':
-                    unlocked.add(x)
-        col_order = [c for c in (4, 5, 3, 6, 2, 7, 1, 8, 0, 9) if c in unlocked]
-        if not col_order:
-            col_order = [4]
-        cols = {}
-        crop_ids = [i for i in range(n_units) if roles[i] == 'crop']
-        for k, i in enumerate(crop_ids):
-            cols[i] = col_order[k % len(col_order)]
-        st['cols'] = cols
-        return roles
-
-    # ---------------- animal role ----------------
-    def needy_plant(self, ctx, p, taken):
-        """Nearest plant that would actually bank the fertilizer bonus, by
-        tier: one-shot crops inside their bank window first (a single
-        application covers every remaining bank day and doubles the crop:
-        wheat 3->6, carrot 2->4), then ongoing crops in production
-        (acceleration + faster rotation), then anything else uncovered.
-        Melons that are watered daily hit their cap without fertilizer, so
-        they sink to the bottom. Re-application is automatic: a tile whose
-        coverage lapsed is uncovered again, ~every 3 days through the
-        production run.
-        DSM embargo: NO field fertilizer before d9 (mined: FERTILIZE 0/d
-        until d9, 21 on d10, 81 on d11). Early fert is sold (~$100/u,
-        ~$500/day = the d1-6 hire/seed engine); a +3 wheat bonus later is
-        worth less than a hire today. Collectors keep collecting (shed ->
-        sold); only application and shed-pull are gated."""
-        if ctx.day < 9:
-            return None
-        cands = []
-        for x, y, t in ctx.plants:
-            if (x, y) in taken:
-                continue
-            try:
-                if int(t.get('fertilized_until_day', -1) or -1) >= ctx.day:
-                    continue
-                age = ctx.day - int(t.get('planted_day', 99) or 99)
-                if age < 1:
-                    continue
-            except Exception:
-                continue
-            crop = t.get('crop')
-            cd = CROPS.get(crop, {})
-            if cd.get('ongoing'):
-                tier = 1
-            else:
-                wstart = (cd.get('maxday', 99) + 1) // 2
-                tier = 0 if wstart <= age <= cd.get('maxday', 99) else 2
-                if crop == 'MELON':
-                    tier = 2
-            cands.append((tier, manhattan(p, (x, y)), x, y))
-        if not cands:
-            return None
-        cands.sort()
-        return (cands[0][2], cands[0][3])
-
-    def structure_deficit(self, ctx):
-        need_p = sum(ctx.owned.get(s, 0) for s in ('COW', 'SHEEP')) \
-            + (1 if (ctx.owned.get('COW', 0) + ctx.owned.get('SHEEP', 0)) > 0 else 0)
-        have_p = sum(1 for _, _, t in ctx.structs if t.get('kind') == 'PASTURE')
-        need_c = ctx.owned.get('GOOSE', 0) + (1 if ctx.owned.get('GOOSE', 0) > 0 else 0)
-        have_c = sum(1 for _, _, t in ctx.structs if t.get('kind') == 'COOP')
-        return have_p < need_p or have_c < need_c
-
-    def build_kind(self, ctx):
-        need_p = sum(ctx.owned.get(s, 0) for s in ('COW', 'SHEEP')) \
-            + (1 if (ctx.owned.get('COW', 0) + ctx.owned.get('SHEEP', 0)) > 0 else 0)
-        have_p = sum(1 for _, _, t in ctx.structs if t.get('kind') == 'PASTURE')
-        need_c = ctx.owned.get('GOOSE', 0) + (1 if ctx.owned.get('GOOSE', 0) > 0 else 0)
-        have_c = sum(1 for _, _, t in ctx.structs if t.get('kind') == 'COOP')
-        if have_p < need_p or have_c < need_c:
-            # build for whoever is actually waiting (shed+carried); the old
-            # pasture-first rule starved coops so geese never placed.
-            try:
-                wait_p = int(ctx.shed.get('COW', 0) or 0) + int(ctx.shed.get('SHEEP', 0) or 0)
-                wait_c = int(ctx.shed.get('GOOSE', 0) or 0)
-                for inv in ctx.invs:
-                    wait_p += int((inv or {}).get('COW', 0) or 0) + int((inv or {}).get('SHEEP', 0) or 0)
-                    wait_c += int((inv or {}).get('GOOSE', 0) or 0)
-            except Exception:
-                wait_p, wait_c = 1, 0
-            if wait_c > 0 and have_c < need_c and (have_p >= need_p or wait_c >= wait_p):
-                return 'BUILD_COOP'
-        return 'BUILD_PASTURE' if have_p < need_p else 'BUILD_COOP'
-
-    def place_animal(self, ctx, st, i, p, taken, carry):
-        """BUILD then PLACE in one motion, with a per-unit tile reservation so
-        carriers don't stack on one structure (that race stranded units PASSing
-        for half a day). Ports Boey's d0 t=5-6 placement."""
-        pres = st.setdefault('pres', {})
-        kind = ANIMALS[carry]['structure']
-        claimed = set()
-        for u, t_ in pres.items():
-            if u != i and t_:
-                claimed.add(tuple(t_))
-        cands = [(x, y) for x, y, t in ctx.structs
-                 if t.get('kind') == kind and t.get('animal') is None
-                 and (x, y) not in taken and (x, y) not in claimed]
-        if cands:
-            r = tuple(pres.get(i) or ())
-            tgt = min(cands, key=lambda t2: (0 if (t2[0], t2[1]) == r else 1,
-                                             manhattan(p, t2)))
-            if (p[0], p[1]) == tgt:
-                pres.pop(i, None)
-                taken.add(tgt)   # hold through the step: the PLACE has not
-                return ['PLACE', carry]   # been applied yet, so a sibling
-            pres[i] = tgt       # must not grab the same structure this step
-            taken.add(tgt)
-            return step_toward(p, tgt) or ['PASS']
-        # no free structure: build one. Reserve the tile so other carriers
-        # don't converge on it.
-        bt = self.free_tile(ctx, set(taken) | claimed, p)
-        if bt is None:
-            return ['PASS']
-        pres[i] = bt
-        taken.add(bt)
-        if (p[0], p[1]) == bt:
-            pres.pop(i, None)
-            return [self.build_kind(ctx)]
-        return step_toward(p, bt) or ['PASS']
-
-    def burst_fetch(self, ctx, st, i, p):
-        """Fetch one shed animal for placement. No per-day quota: a unit
-        places all day while the shed holds animals (the fed-or-noon gate
-        below protects morning feed; pres reservations serialize structures
-        so parallel fetchers don't collide). Gated on the herd being fed
-        (an ungated dawn burst starved feeding and stalled the herd) or
-        noon, whichever first. An urgent-only gate was tried and lost ~10k:
-        pre-noon placement displaced feed carriers even though the skipped
-        animals were "safe", and feeding slipped late. PICKUP is unconditional on free structures:
-        place_animal BUILDs when none is free, so refusing pickup strands
-        the shed instead of filling the field."""
-        if ctx.hour < 12 and any(t.get('animal') is not None and not t.get('fed_today')
-                                 for _, _, t in ctx.structs):
-            return None
-        if int(st.get('aleft', 0) or 0) <= 0:
-            return None
-        for a in ANIMALS:
-            if int(ctx.shed.get(a, 0) or 0) <= 0:
-                continue
-            # commit the budget on intent (walk or pickup): aleft resets
-            # every step, so a diverted unit only undercounts this step,
-            # while without the commit the whole crew chases one animal.
-            st['aleft'] = int(st.get('aleft', 0) or 0) - 1
-            if shed_adjacent(p):
-                return ['PICKUP', a, 1]
-            return step_toward(p, nearest_shed_tile(p)) or ['PASS']
-        return None
-
-    def _aclaim_valid(self, ctx, tile):
-        """Work-based validation for a shared animal-crew target: an animal
-        tile with unfinished business, or a still-ripe standing wheat tile
-        (5b feed-direct). NOTE: tile may be a 5-tuple (x, y, step, px, py);
-        compare on coordinates only."""
-        tx, ty = tile[0], tile[1]
-        for x, y, t in ctx.structs:
-            if (x, y) != (tx, ty) or t.get('animal') is None:
-                continue
-            if not t.get('fed_today'):
-                return True
+                    yld = 0
+                if yld < ANIMAL_MAXHELD.get(t.get('animal'), 6):
+                    taken.add((x, y))
+                    return ['CARE']
+            if t.get('fertilizer_available'):
+                taken.add((x, y))
+                return ['COLLECT_FERTILIZER']
             try:
                 yld = int(t.get('yield_units', 0) or 0)
             except Exception:
                 yld = 0
-            mh = ANIMAL_MAXHELD.get(t.get('animal'), 6)
-            if t.get('fed_today') and not t.get('cared_today') and yld < mh:
-                return True
-            if yld > 0 or t.get('fertilizer_available'):
-                return True
-            return False
-        wcd = CROPS.get('WHEAT', {})
-        for x, y, t in ctx.plants:
-            if (x, y) != (tx, ty) or t.get('crop') != 'WHEAT':
-                continue
-            try:
-                age = ctx.day - int(t.get('planted_day', 0) or 0)
-                yld = int(t.get('yield_units', 0) or 0)
-            except Exception:
-                continue
-            if yld >= wcd.get('maxyield', 6) or age > wcd.get('maxday', 4) or \
-                    (age == wcd.get('maxday', 4) and t.get('watered_today') and yld > 0):
-                return True
-            return False
-        return False
-
-    def endgame_work(self, ctx, st, i, p, inv_i, taken):
-        """Day 29: the reward locks at 22:00, before dusk processing, so no
-        production runs again and nothing fed/watered/cared/planted today can
-        ever pay. Harvest every standing yield unit, bank everything early
-        (the deadline is 22:00, not midnight), skip everything else."""
-        # 1) bank any sellable load now (wheat/fert included: feed is over,
-        #    everything converts to money)
-        if any(int(v or 0) > 0 for k, v in inv_i.items() if k in SELLABLE):
-            bc = bank_cmd(ctx, st, inv_i, exclude=())
-            if bc is not None:
-                if shed_adjacent(p):
-                    return bc
-                return step_toward(p, nearest_shed_tile(p)) or ['PASS']
-        # 2) nearest standing yield (animals + plants, ripe or not: unripe
-        #    yield still banks, and there is no tomorrow to protect)
-        best = None
-        for x, y, t in ctx.structs:
-            if not isinstance(t, dict) or t.get('animal') is None:
-                continue
-            if (x, y) in taken:
-                continue
-            if int(t.get('yield_units', 0) or 0) > 0:
-                d = manhattan(p, (x, y))
-                if best is None or d < best[0]:
-                    best = (d, x, y, 'HARVEST')
-            elif t.get('fertilizer_available'):
-                d = manhattan(p, (x, y)) + 0.5
-                if best is None or d < best[0]:
-                    best = (d, x, y, 'COLLECT_FERTILIZER')
-        for x, y, t in ctx.plants:
-            if not isinstance(t, dict):
-                continue
-            if (x, y) in taken:
-                continue
-            if int(t.get('yield_units', 0) or 0) > 0:
-                d = manhattan(p, (x, y))
-                if best is None or d < best[0]:
-                    best = (d, x, y, 'HARVEST')
-        if best is None:
-            # nothing left to harvest: drift shed-ward for the final bank
-            if shed_adjacent(p):
-                return ['PASS']
-            return step_toward(p, nearest_shed_tile(p)) or ['PASS']
-        _, x, y, cmd = best
-        taken.add((x, y))
-        if (p[0], p[1]) == (x, y):
-            return [cmd]
-        return step_toward(p, (x, y)) or ['PASS']
-
-    def animal_work(self, ctx, st, i, p, inv_i, taken, sibpos):
-        """The whole herd economy. Returns a command, or None when idle (the
-        unit then helps the crop sweep -- bonus labour, never a theft)."""
-        if ctx.day >= 29:
-            return self.endgame_work(ctx, st, i, p, inv_i, taken)
-        # shared feed/visit targets (first-come): `taken` is per-step only,
-        # so without this two animal units converge on the same unfed animal
-        # across steps and the loser re-walks -- the same hole shared crop
-        # claims closed. Work-based validation; no fallback, no stealing,
-        # no distance games (a nearer-claimant filter collapsed two seeds
-        # below baseline: the far claimant kept walking, so every far claim
-        # drew two walkers instead of one).
-        have_wheat = int(inv_i.get('WHEAT', 0) or 0) > 0
-        aclaims = st.setdefault('aclaim', {})
-        mine = aclaims.get(i)
-        if mine is not None and not self._aclaim_valid(ctx, mine):
-            aclaims.pop(i, None)
-            mine = None
-        if mine is not None and not have_wheat:
-            # holding an unfed-animal target without wheat blocks siblings
-            # that HAVE wheat from feeding it (the claim is valid work, but
-            # not work THIS unit can do). Release; re-claim after fetching.
-            for x, y, t in ctx.structs:
-                if (x, y) == (mine[0], mine[1]) and t.get('animal') is not None \
-                        and not t.get('fed_today'):
-                    aclaims.pop(i, None)
-                    mine = None
-                    break
-        if int(inv_i.get('FERTILIZER', 0) or 0) > 0 and i in aclaims:
-            # COLLECTION PROOF: this unit lifted the fert its claim was for
-            # (animal-work (8) and the farmer's fert pull both register in the
-            # shared aclaim namespace). The claim stays "valid" (unfed tile =
-            # valid work) but THIS unit is now a cargo carrier, so the claim
-            # blocks siblings from FEEDing that tile -- a stale fert claim
-            # starved a sheep all of d1 PM (both feeders excluded, escape).
-            # Release; whoever still needs the tile re-claims next step.
-            aclaims.pop(i, None)
-            mine = None
-        others_a = set()
-        for u, v in aclaims.items():
-            if u != i and v:
-                try:
-                    others_a.add((v[0], v[1]))
-                except Exception:
-                    pass
-        # 1) carrying an animal -> place it now (long BUILD trips: release
-        #    the feed target so a sibling serves it meanwhile)
-        for a in ANIMALS:
-            if int(inv_i.get(a, 0) or 0) > 0:
-                aclaims.pop(i, None)
-                return self.place_animal(ctx, st, i, p, taken, a)
-        # 1b) PLACEMENT BURST: an animal sitting in the shed produces nothing
-        #     but still counts against `owned`, so the market's deficit logic
-        #     sees the target as met and stops buying.
-        c = self.burst_fetch(ctx, st, i, p)
-        if c is not None:
-            aclaims.pop(i, None)  # placement trip: release the feed target
-            return c
-        # 2) carried produce -> shed (the sell pipeline). Wheat is working
-        #    stock and rides until d28; fert is handled at (9).
-        load = sum(v for k, v in inv_i.items()
-                   if k in PRODUCTS and k not in ('WHEAT', 'FERTILIZER') and v)
-        if load:
-            bc = bank_cmd(ctx, st, inv_i)
-            if bc is None:
-                pass  # shed full: hold cargo, do field work, retry later
-            elif shed_adjacent(p):
-                return bc
-            else:
-                return step_toward(p, nearest_shed_tile(p)) or ['PASS']
-        # 3) ON-TILE BATCH: standing on an animal tile -> do everything
-        #    here before leaving (FEED->CARE->HARVEST->COLLECT). The old code
-        #    made four separate visits per animal per day (feed sweep, care
-        #    sweep, value-density harvest sweep, collect sweep): ~3 wasted
-        #    walks/head/day, the whole walk gap to v76 (62% vs 42%). One
-        #    visit does all four. Non-feed actions wait until the herd is fed
-        #    (the market's feed gate blocks buys while any animal is hungry)
-        #    or h10, whichever first; FEED itself is always allowed so the
-        #    morning feed sweep never stalls.
-        #    FEED STRIDE (herd >= 10): an animal at cu==0 with nothing stored
-        #    is deliberately skipped today (DSM feeds ~75%: 1827 gap-0 vs 623
-        #    gap-1). Skipping is escape-safe by construction (cu 0->1, fed
-        #    tomorrow before it can reach 2) and payout-safe (tomorrow's feed
-        #    covers tomorrow's production); it only forgoes one banked CARE
-        #    unit, worth less than the saved visit on crunch days. Small
-        #    herds feed everything (bank growth is cheap when labor is free).
-        placed_n = sum(1 for _, _, t in ctx.structs if t.get('animal') is not None)
-        stride = STRIDE_ON and placed_n >= 10
-        def _urgent(t):
-            return int(t.get('consecutive_unfed', 0) or 0) >= 1 \
-                or int(t.get('yield_units', 0) or 0) > 0
-        unfed = [(x, y) for x, y, t in ctx.structs
-                 if t.get('animal') is not None and not t.get('fed_today')
-                 and (x, y) not in taken and (x, y) not in others_a
-                 and (not stride or _urgent(t))]
-        unfed_any = any(t.get('animal') is not None and not t.get('fed_today')
-                        and (not stride or _urgent(t))
-                        for _, _, t in ctx.structs)
-        here = self.tile_at(ctx, p[0], p[1])
-        if isinstance(here, dict) and here.get('animal') is not None \
-                and (p[0], p[1]) not in taken:
-            mh = ANIMAL_MAXHELD.get(here.get('animal'), 6)
-            yld = int(here.get('yield_units', 0) or 0)
-            if not here.get('fed_today') and have_wheat \
-                    and (not stride or _urgent(here)):
-                taken.add((p[0], p[1]))
-                aclaims[i] = (p[0], p[1])
-                return ['FEED']
-            if not unfed_any or ctx.hour >= 10:
-                if here.get('fed_today') and not here.get('cared_today') \
-                        and yld < mh:
-                    taken.add((p[0], p[1]))
-                    aclaims[i] = (p[0], p[1])
-                    return ['CARE']
-                if yld > 0:
-                    taken.add((p[0], p[1]))
-                    aclaims[i] = (p[0], p[1])
-                    return ['HARVEST']
-                if here.get('fertilizer_available'):
-                    taken.add((p[0], p[1]))
-                    aclaims[i] = (p[0], p[1])
-                    return ['COLLECT_FERTILIZER']
-        # 4) FEED: escape is permanent and free to prevent. Feed the nearest
-        #    unfed animal (shared target: siblings serve other tiles).
-        #    URGENCY FIRST (P0 seed-0 trace): nearest-first left the cu=1
-        #    (2,4) sheep to last; both feeders then deadlocked on it at
-        #    h22-23 (claimer blocked by the crop guard's `taken`, the other
-        #    by the day-claim in `others_a`) and it escaped overnight.
-        #    A cu>=1 animal escapes TONIGHT; a cu=0 one cannot. Serve the
-        #    tonight-escapers first, nearest within each urgency tier.
-        if have_wheat and unfed:
-            def _feedkey(z):
-                try:
-                    for _x, _y, _t in ctx.structs:
-                        if (_x, _y) == z:
-                            return (-int(_t.get('consecutive_unfed', 0) or 0),
-                                    manhattan(p, z))
-                except Exception:
-                    pass
-                return (0, manhattan(p, z))
-            x, y = min(unfed, key=_feedkey)
-            if (p[0], p[1]) == (x, y):
+            if yld > 0:
                 taken.add((x, y))
-                aclaims[i] = (x, y)  # hold through the batch (care/harvest)
-                return ['FEED']
-            taken.add((x, y))
-            aclaims[i] = (x, y)
-            return step_toward(p, (x, y)) or ['PASS']
-        # 5) no wheat but animals hungry and the shed has wheat -> fetch it.
-        #    Carry four: one shed trip feeds four animals (the replay
-        #    champion's modal carry), so feeding costs a quarter of the trips
-        #    of one-at-a-time fetching.
-        #    REVERTED herd-scaled carry to 12 (A/B: 29.2k vs 40.4k, 200002
-        #    38.2k->23.0k, 200005 48.3k->17.4k): big grabs empty the shed
-        #    mid-day, stranding co-feeders at wleft=0 (they pin on unfed
-        #    tiles carrying nothing); feeders serve ~4-8 head each, so
-        #    carry-4 was 1-2 trips/day, never the dominant visit term.
-        #    The binding term is pasture-to-pasture travel, not shed trips.
-        if not have_wheat and unfed and int(st.get('wleft', 0) or 0) > 0:
-            if shed_adjacent(p):
-                q = min(4, int(st.get('wleft', 0) or 0))
-                if q > 0:
-                    st['wleft'] = int(st['wleft']) - q
-                    return ['PICKUP', 'WHEAT', q]
-                return ['PASS']
-            return step_toward(p, nearest_shed_tile(p)) or ['PASS']
-        # 5b) FEED-DIRECT: shed wheat is empty but ripe standing wheat
-        #     exists -> harvest it now and feed from hands. Without this the
-        #     crew deadlocks: hungry animals pin every animal unit (they walk
-        #     to unfed tiles carrying nothing) while the wheat they need sits
-        #     unharvested in the fields, so the shed stays empty and nobody
-        #     ever feeds (200001 d12+: feed 8-10/day for 12-15 head ->
-        #     escapes -> weeds -> 19k).
-        if not have_wheat and unfed and int(st.get('wleft', 0) or 0) <= 0:
-            # MATURITY ONLY (same rule as the crop sweep): harvesting green
-            # wheat for feed destroys up to ~3u of future yield per tile
-            # (K2-verified: unfert wheat lifetime is 4u total) to save one
-            # walk, collapsing the wheat economy into a death spiral
-            # (unfertilized trial of this block: 44.8k -> 8.9k on 200004).
-            wcd = CROPS.get('WHEAT', {})
-            wmx = wcd.get('maxyield', 6)
-            wmaxday = wcd.get('maxday', 4)
-            # skip wheat a crop unit already walks (its day-claim): without
-            # this the crop unit treks to an empty tile when this harvests
-            # first -- the same stale-target waste shared claims fixed.
-            cclaimed = set()
-            for u, v in (st.get('claim', {}) or {}).items():
-                if u != i and v:
-                    try:
-                        cclaimed.add((v[0], v[1]))
-                    except Exception:
-                        pass
-            ripe = []
-            for x, y, t in ctx.plants:
-                if t.get('crop') != 'WHEAT' or (x, y) in taken \
-                        or (x, y) in cclaimed:
-                    continue
-                try:
-                    age = ctx.day - int(t.get('planted_day', 0) or 0)
-                    yld = int(t.get('yield_units', 0) or 0)
-                except Exception:
-                    continue
-                if yld >= wmx or age > wmaxday or \
-                        (age == wmaxday and t.get('watered_today') and yld > 0):
-                    ripe.append((x, y))
-            if ripe:
-                x, y = min(ripe, key=lambda z: manhattan(p, z))
-                taken.add((x, y))
-                aclaims[i] = (x, y)
-                if (p[0], p[1]) == (x, y):
-                    return ['HARVEST']
-                return step_toward(p, (x, y)) or ['PASS']
-        # 6) VISIT: nearest animal tile with unfinished work. The batch
-        #    at (3) finishes tiles in one visit, so the CAPHARV sweep, the
-        #    CARE sweep and the value-density harvest sweep collapse into this
-        #    single traveler -- value-density ranking across the farm was
-        #    sending units on cross-map trips (the walk disease). A unit
-        #    standing on an unfinished tile never reaches here: the batch
-        #    acts first. Same gate as the batch: herd fed or h10.
-        if not unfed_any or ctx.hour >= 10:
-            visit = [(x, y) for x, y, t in ctx.structs
-                     if t.get('animal') is not None and (x, y) not in taken
-                     and (x, y) not in others_a
-                     and ((t.get('fed_today') and not t.get('cared_today')
-                           and int(t.get('yield_units', 0) or 0)
-                           < ANIMAL_MAXHELD.get(t.get('animal'), 6))
-                          or int(t.get('yield_units', 0) or 0) > 0
-                          or t.get('fertilizer_available'))]
-            if visit:
-                x, y = min(visit, key=lambda z: manhattan(p, z))
-                taken.add((x, y))
-                aclaims[i] = (x, y)
-                return step_toward(p, (x, y)) or ['PASS']
-        # 7) carried fertilizer -> onto a needy plant now (an animal standing
-        #    in the crop rows applies it where it doubles yield); else shed it
-        #    so it sells instead of stranding.
-        fert = int(inv_i.get('FERTILIZER', 0) or 0)
-        if fert:
-            fz = self.needy_plant(ctx, p, taken)
-            if fz:
-                x, y = fz
-                if (p[0], p[1]) == (x, y):
-                    return ['FERTILIZE']
-                return step_toward(p, (x, y)) or ['PASS']
-            bc = bank_cmd(ctx, st, inv_i, exclude=('WHEAT',))
-            if bc is None:
-                pass  # shed full: hold, retry after the market sells
-            elif shed_adjacent(p):
-                return bc
-            else:
-                return step_toward(p, nearest_shed_tile(p)) or ['PASS']
-        # 8) COLLECT_FERTILIZER (every animal makes 1/day)
-        cf = [(x, y) for x, y, t in ctx.structs
-              if t.get('animal') is not None and t.get('fertilizer_available')
-              and (x, y) not in taken and (x, y) not in others_a]
-        if cf:
-            x, y = min(cf, key=lambda z: manhattan(p, z))
-            if (p[0], p[1]) == (x, y):
-                taken.add((x, y))
-                aclaims[i] = (x, y)
-                return ['COLLECT_FERTILIZER']
-            taken.add((x, y))
-            aclaims[i] = (x, y)
-            return step_toward(p, (x, y)) or ['PASS']
-        # 9) BUILD if there is a structure deficit (BUILD is free; only the
-        #    walk + action). Above the fert pull: a waiting animal produces
-        #    nothing and blocks herd growth, while fertilizer keeps. Reserve
-        #    the tile across both pres (persist the walk) and taken (hold it
-        #    for the step): without this, two animal units run identical
-        #    deterministic free_tile() and converge on one tile, so one BUILD
-        #    silently fails every time.
-        if self.structure_deficit(ctx) and ctx.empty_tiles:
-            pres = st.setdefault('pres', {})
-            claimed = set()
-            for u, t_ in pres.items():
-                if u != i and t_:
-                    claimed.add(tuple(t_))
-            tgt = self.free_tile(ctx, set(taken) | claimed, p)
-            if tgt:
-                pres[i] = tgt
-                taken.add(tgt)
-                if (p[0], p[1]) == tgt:
-                    pres.pop(i, None)
-                    return [self.build_kind(ctx)]
-                return step_toward(p, tgt) or ['PASS']
-        # 10) shed fertilizer -> pull it out whenever a plant can bank it
-        #    (crop units never touch fert, so the animal role owns the loop).
-        #    The old >15 stockpile threshold starved the fields: the replay
-        #    champion pulls 2-6 at a time, ~20/day, and puts ~200/game mostly
-        #    on wheat bank days. Carry six; the apply step sheds the surplus.
-        if int(ctx.shed.get('FERTILIZER', 0) or 0) > 0 \
-                and self.needy_plant(ctx, p, taken) is not None:
-            if shed_adjacent(p):
-                return ['PICKUP', 'FERTILIZER', min(6, int(ctx.shed.get('FERTILIZER', 0) or 0))]
-            return step_toward(p, nearest_shed_tile(p)) or ['PASS']
-        return None   # idle -> help the crop sweep
-
-    # ---------------- crop role ----------------
-    def sweep_order(self, ctx, col):
-        """Tiles in a column, ordered away from the shed (y=4 first = nearest
-        the supply point). Without col, a continuous snake over the whole
-        unlocked farm."""
-        out = []
-        if col is not None:
-            H = len(ctx.tiles)
-            return [(col, y) for y in range(H)
-                    if self.tile_at(ctx, col, y) != 'LOCKED']
-        H = len(ctx.tiles)
-        home = [y for y in range(H) if y <= 4]
-        ext = [y for y in range(H) if y > 4]
-        rows = sorted(home, reverse=True) + sorted(ext, reverse=True)
-        for k, y in enumerate(rows):
-            xs = [x for x in range(len(ctx.tiles[y]))
-                  if self.tile_at(ctx, x, y) != 'LOCKED']
-            if k % 2 == 0:
-                xs.reverse()
-            out.extend((x, y) for x in xs)
-        return out
-
-    def sweep_work(self, ctx, col, crop, taken):
-        """Work in a column: ripe (harvest), thirsty/bank-day (water), weed or
-        expired (dig), empty (plant). Water outranks plant so tiles never die
-        into weeds; harvest maturity is per crop so one-shots are never taken
-        green (harvesting clears the tile and destroys the remaining bank
-        days -- the replay champion takes wheat at 0.8-1.0 fill, never 0.3)."""
-        out = []
-        for x, y in self.sweep_order(ctx, col):
-            if (x, y) in self.SHED_TILES or (x, y) in taken:
-                continue
-            t = self.tile_at(ctx, x, y)
-            if isinstance(t, dict) and t.get('kind') == 'PLANT':
-                cd = CROPS.get(t.get('crop'), {})
-                try:
-                    age = ctx.day - int(t.get('planted_day', 0) or 0)
-                    yld = int(t.get('yield_units', 0) or 0)
-                except Exception:
-                    age, yld = -1, 0
-                if cd.get('ongoing'):
-                    # expired ongoing (all productions banked) -> free the
-                    # tile for replanting instead of watering a corpse.
-                    if age > cd.get('first', 99) + cd.get('maxyield', 4) * max(1, cd.get('interval', 1)):
-                        out.append((x, y, 'DIG'))
-                        continue
-                    # harvest at ANY yield (a threshold-3 was tried: our cash
-                    # engine is timing-sensitive -- delaying strawberry banks
-                    # 2-4 days slips the land/herd ramp, net -1.1k with -4.3k
-                    # on 200002; early dollars compound).
-                    if age >= cd.get('first', 99) and yld > 0:
-                        out.append((x, y, 'HARV'))
-                    elif not t.get('watered_today'):
-                        # survival, plus the production eve for FERTILIZED
-                        # ongoing only: an unfertilized crop banks +1 on
-                        # production days whether or not it is watered, so
-                        # watering it outside survival is wasted labor. A
-                        # fertilized crop only banks the doubling on a
-                        # watered production day.
-                        cu = int(t.get('consecutive_unwatered', 0) or 0)
-                        fert = int(t.get('fertilized_until_day', -1) or -1) >= ctx.day
-                        dsf = ctx.day + 1 - int(t.get('planted_day', 0) or 0) - cd.get('first', 99)
-                        if cu >= 1 or (fert and dsf >= 0 and dsf % max(1, cd.get('interval', 1)) == 0):
-                            out.append((x, y, 'WATER'))
-                else:
-                    mx = cd.get('maxyield', 6)
-                    maxday = cd.get('maxday', 99)
-                    if yld >= mx or age > maxday or \
-                            (age == maxday and t.get('watered_today') and yld > 0):
-                        out.append((x, y, 'HARV'))
-                    elif not t.get('watered_today'):
-                        # survival-minimum watering. A plant dies at
-                        # consecutive_unwatered >= 2 (end of day), and planting day
-                        # already counts as 1, so a tile that skipped yesterday --
-                        # or was just planted -- MUST be watered today or it dies
-                        # into a weed. A tile watered yesterday can wait, EXCEPT
-                        # inside the bank window: a one-shot only banks yield on
-                        # watered days, so every skipped window day is -1 (-2
-                        # fertilized) units lost forever.
-                        cu = int(t.get('consecutive_unwatered', 0) or 0)
-                        wstart = (maxday + 1) // 2
-                        if cu >= 1 or (wstart <= age <= maxday and yld < mx):
-                            out.append((x, y, 'WATER'))
-            elif isinstance(t, dict) and t.get('kind') == 'WEED':
-                out.append((x, y, 'DIG'))
-            elif t is None and crop is not None:
-                out.append((x, y, 'PLANT'))
-        return out
-
-    def crop_work(self, ctx, st, i, p, inv_i, taken, sibpos):
-        """Column-locked PLANT->WATER sweep with batched delivery. Never emits
-        an animal action except placement (the farmer places too: the replay
-        champion's farmer places ~11 animals a game) and the escape guard
-        (permanent loss outranks any crop), and only late in the day so the
-        sweep isn't punctured."""
-        if ctx.day >= 29:
-            return self.endgame_work(ctx, st, i, p, inv_i, taken)
-        # a0) carrying an animal -> place it now; the farmer also fetches
-        #     one from the shed when the burst gate allows (replay champion's
-        #     farmer places ~11/game). Other crop units do NOT fetch here:
-        #     d0 plant/water is same-day survival (planted cu=1 dies unwatered
-        #     overnight) while a new animal survives its first day unfed, so
-        #     planting+watering outranks fetching; crop units only fetch once
-        #     the sweep is clean (see (f) below).
-        for a in ANIMALS:
-            if int(inv_i.get(a, 0) or 0) > 0:
-                return self.place_animal(ctx, st, i, p, taken, a)
-        if i == 0:
-            c = self.burst_fetch(ctx, st, i, p)
-            if c is not None:
-                return c
-        # a0a2) FARMER CLAIM HYGIENE: the farmer registers fert targets in the
-        #     shared aclaim namespace (a0b + clean-sweep pull below), but never
-        #     passes animal_work's validation/release, so a spent claim (fert
-        #     collected or expired) stays "valid" (unfed tile = valid work) and
-        #     blocks BOTH feeders from that tile via others_a -- starved a
-        #     sheep d1 PM. Release on collection proof (carrying fert) or when
-        #     the claimed tile no longer offers fert.
-        if i == 0:
-            try:
-                _ac = st.get('aclaim', {}) or {}
-                _mine0 = _ac.get(0)
-                if _mine0 is not None:
-                    if int(inv_i.get('FERTILIZER', 0) or 0) > 0:
-                        _ac.pop(0, None)
-                    else:
-                        _offers = set()
-                        for _x, _y, _t in ctx.structs:
-                            try:
-                                if _t.get('animal') is not None \
-                                        and _t.get('fertilizer_available'):
-                                    _offers.add((_x, _y))
-                            except Exception:
-                                pass
-                        if (int(_mine0[0]), int(_mine0[1])) not in _offers:
-                            _ac.pop(0, None)
-            except Exception:
-                pass
-        # a0b) FARMER FERT PRIORITY (day==1 ONLY, DSM 112076061 d1: the farmer
-        #     collects h1/h2/h4 FIRST, sweeps after). d0 is excluded: d0 labor
-        #     is the tightest of the game (15 plants + 5 placements + feeds)
-        #     and chasing ferts then cost a sheep (d2 herd 2C+2S, -6k).
-        #     hence yield-useless, while 5 dawn ferts decay by ~h12 and d1
-        #     income ($43 = 1-2 ferts) starves the MELON-12 quota. d1 AM/PM
-        #     planting is day-granular (same ripe day either way), so
-        #     collecting first (~15 actions) costs nothing. Day==1 only: d0
-        #     labor is escape-critical (see above), and d2 opens the wheat
-        #     window, so watering outranks ferts again.
-        if i == 0 and ctx.day == 1:
-            try:
-                _oa2 = set()
-                for _u, _v in (st.get('aclaim', {}) or {}).items():
-                    if _u != i and _v:
-                        _oa2.add((_v[0], _v[1]))
-            except Exception:
-                _oa2 = set()
-            try:
-                _cf2 = [(x, y) for x, y, t in ctx.structs
-                        if t.get('animal') is not None
-                        and t.get('fertilizer_available')
-                        and (x, y) not in taken and (x, y) not in _oa2]
-            except Exception:
-                _cf2 = []
-            if _cf2:
-                _gx, _gy = min(_cf2, key=lambda z: manhattan(p, z))
-                taken.add((_gx, _gy))
-                st.setdefault('aclaim', {})[i] = (_gx, _gy)
-                if (p[0], p[1]) == (_gx, _gy):
-                    return ['COLLECT_FERTILIZER']
-                # NOTE: step_toward, not walk(): this block runs before the
-                # walk() def below executes, so walk is unbound here.
-                return step_toward(p, (_gx, _gy)) or ['PASS']
-        # P1 walk wrapper: before spending a step on movement, try to spend it
-        # on work the tile underfoot needs (survival water, weed, or lifting
-        # fertilizer off an animal tile into the pocket). The claim and the
-        # target are untouched -- the unit resumes its walk next step. This is
-        # what converts a WALK step into an ACTION step; the COOP/PASTURE
-        # branch is the fertilizer supply that never touches the shed.
-        def walk(tgt):
-            c = self.enroute_cmd(ctx, st, i, p, tgt)
-            if c is not None:
-                return c
-            return step_toward(p, tgt) or ['PASS']
-
-        # a) escape guard: an animal already unfed yesterday AND today will
-        #    escape tonight. Feed it even at crop labour's expense.
-        if ctx.day < 28 and ctx.hour >= 18 and int(inv_i.get('WHEAT', 0) or 0) > 0:
-            for x, y, t in ctx.structs:
-                if t.get('animal') is None or t.get('fed_today'):
-                    continue
-                if int(t.get('consecutive_unfed', 0) or 0) >= 1 and (x, y) not in taken:
-                    if (p[0], p[1]) == (x, y):
-                        taken.add((x, y))
-                        return ['FEED']
-                    taken.add((x, y))
-                    return step_toward(p, (x, y)) or ['PASS']
-        # b) carried fert -> apply, else shed (kept out of the produce path so
-        #    it reaches the field rather than the sell pile)
-        fert = int(inv_i.get('FERTILIZER', 0) or 0)
-        if fert:
-            fz = self.needy_plant(ctx, p, taken)
-            if fz:
-                x, y = fz
-                if (p[0], p[1]) == (x, y):
-                    return ['FERTILIZE']
-                return walk((x, y))
-            bc = bank_cmd(ctx, st, inv_i, exclude=('WHEAT',))
-            if bc is None:
-                pass  # shed full: hold, retry after the market sells
-            elif shed_adjacent(p):
-                return bc
-            else:
-                return walk(nearest_shed_tile(p))
-        # c) batched delivery: a real load, or late enough that the midnight
-        #    shed drop would destroy cargo past the 100-slot cap. Immediate
-        #    drop-after-every-harvest was tried and lost ~2k: the extra shed
-        #    round-trips cost more than a day of better prices returns.
-        load = sum(v for k, v in inv_i.items()
-                   if k in PRODUCTS and k not in ('WHEAT', 'FERTILIZER') and v)
-        if ctx.day >= 28:
-            load += int(inv_i.get('WHEAT', 0) or 0)   # feed is over; wheat sells
-        if load and (load >= 6 or ctx.hour >= 21):
-            # d28+: wheat sells too (feed is over), so it joins the bank.
-            bc = bank_cmd(ctx, st, inv_i,
-                          exclude=('FERTILIZER',) if ctx.day >= 28 else ('WHEAT', 'FERTILIZER'))
-            if bc is None:
-                pass  # shed full: hold cargo, do field work, retry later
-            elif shed_adjacent(p):
-                return bc
-            else:
-                return walk(nearest_shed_tile(p))
-        # d) crop choice for planting (same targets the scheduler already set)
-        tgts = st.get('crops', {}) or {}
-        if ctx.day == 0:
-            order = ('MELON', 'WHEAT', 'STRAWBERRY', 'TOMATO', 'CARROT')
-        elif ctx.day <= 1:
-            order = ('WHEAT', 'MELON', 'STRAWBERRY', 'TOMATO', 'CARROT')
-        else:
-            order = ('MELON', 'STRAWBERRY', 'WHEAT', 'TOMATO', 'CARROT')
-        # FEED FLOOR: wheat is the herd's survival input, and the animal
-        # purchase gate keys on shed wheat (feed_cap = max(herd, min(cap,
-        # shedW))). Below the floor, wheat outranks everything. Floor is 1x
-        # herd, period (FEED=1 wheat/animal/day: 1x herd IS one day of feed).
-        # Static 1.5x: +6-8k on 2 seeds, -13k/-22k on 2 others
-        # (net -3.9k). A crisis-latched 1.5x (shed-empty trigger) was WORSE
-        # (net -8.5k): it plants extra wheat exactly when the system is
-        # stressed, displacing cash crops at the worst moment -- insurance
-        # built during a crunch compounds the crunch. Feed insurance must be
-        # built in surplus (early/calm planting) or bought (emergency wheat
-        # buy), never planted into stress.
-        if ctx.day < 28:
-            herd_n = sum(1 for _, _, t in ctx.structs if t.get('animal') is not None)
-            # REVERTED ripe-only reserve (A/B: 30.8k vs 40.4k, 200005
-            # 48.3k->14.7k): ripe standing is transient (the sweep harvests
-            # at maturity the same day), so shed+ripe < herd fires almost
-            # every day and wheat jumps the queue whenever its target is
-            # unmet -- systematic early over-planting that displaces
-            # melon/straw at the compounding stage. The "phantom" standing
-            # count was accidentally a wheat throttle: targets (WHEAT
-            # 28/24/12/16) already size the machine; the floor stays rare.
-            if int(ctx.shed.get('WHEAT', 0) or 0) + ctx.standing_crops.get('WHEAT', 0) < herd_n:
-                order = ('WHEAT',) + tuple(c for c in order if c != 'WHEAT')
-        crop = None
-        for c in order:
-            want = tgts.get(c, 0)
-            if want and ctx.standing_crops.get(c, 0) < want \
-                    and int(st['sleft'].get(c, 0) or 0) > 0:
-                crop = c
-                break
-        # ROOM GUARD: planting the last free tiles while bought animals sit
-        # in the shed deadlocks the herd (no room to build structures, and
-        # the market keeps buying into the jam). Keep two spares for
-        # structures until the backlog is placed.
-        unplaced = sum(int(ctx.owned.get(a, 0) or 0) for a in ANIMALS) \
-            - sum(1 for _, _, t in ctx.structs if t.get('animal') is not None)
-        if unplaced > 0 and len(ctx.empty_tiles) <= 2:
-            crop = None
-        # e) the sweep: own column, help anywhere when it is clean
-        col = st.get('cols', {}).get(i)
-        work = self.sweep_work(ctx, col, crop, taken)
-        if not work:
-            work = self.sweep_work(ctx, None, crop, taken)
-        if not work:
-            # FARMER FERT PULL (day<=2, DSM 112076061 d1: the farmer collects
-            # h1/h2/h4 while the sweep is clean). Only 2 animal units serve 5
-            # dawn ferts at 1 action/hour and uncollected ferts decay by ~h12,
-            # so d1 income was ~$43 (1-2 ferts) instead of ~$500 (5) -- which
-            # starved the MELON-12 quota and the whole d10 spike. The collect
-            # rides the normal (b) fert path (apply-or-bank), so cargo never
-            # strands; aclaims keep animal units off the same tile. Farmer-only
-            # (crop-unit collection would thin planting labor on wave days).
-            if i == 0 and ctx.day <= 2:
-                try:
-                    _others_a = set()
-                    for _u, _v in (st.get('aclaim', {}) or {}).items():
-                        if _u != i and _v:
-                            _others_a.add((_v[0], _v[1]))
-                except Exception:
-                    _others_a = set()
-                try:
-                    _cf = [(x, y) for x, y, t in ctx.structs
-                           if t.get('animal') is not None
-                           and t.get('fertilizer_available')
-                           and (x, y) not in taken and (x, y) not in _others_a]
-                except Exception:
-                    _cf = []
-                if _cf:
-                    _fx, _fy = min(_cf, key=lambda z: manhattan(p, z))
-                    taken.add((_fx, _fy))
-                    st.setdefault('aclaim', {})[i] = (_fx, _fy)
-                    if (p[0], p[1]) == (_fx, _fy):
-                        return ['COLLECT_FERTILIZER']
-                    return walk((_fx, _fy))
-            # sweep clean -> join the placement burst (no quota; the fed-gate
-            # keeps mornings safe). Keeps wave days absorbing 4 buys/day
-            # without stealing plant/water labor while the sweep has work.
-            c = self.burst_fetch(ctx, st, i, p)
-            if c is not None:
-                return c
-            return None
-        harvs = [w for w in work if w[2] == 'HARV']
-        waters = [w for w in work if w[2] == 'WATER']
-        digs = [w for w in work if w[2] == 'DIG']
-        plants_ = [w for w in work if w[2] == 'PLANT']
-        # nearest-within-tier: column-scan order walks past closer work
-        # (a unit crosses 3 harvestable tiles to reach the scan-first one).
-        # Priority across tiers is unchanged (HARV>WATER>DIG>PLANT); within a
-        # tier go nearest. Compounds with sticky claims (claims pin the walk
-        # once chosen; this chooses the shortest walk).
-        harvs.sort(key=lambda w: manhattan(p, (w[0], w[1])))
-        waters.sort(key=lambda w: manhattan(p, (w[0], w[1])))
-        digs.sort(key=lambda w: manhattan(p, (w[0], w[1])))
-        plants_.sort(key=lambda w: manhattan(p, (w[0], w[1])))
-        # (Farm-compaction planting was tried: preferring blob-adjacent
-        # tiles packed plants around the shed, leaving no room for nearby
-        # structures; pastures went far, feed walks exploded, avg 39.3k ->
-        # 29.0k. The column-snake spread is load-bearing for structure room.
-        # A repaired version would compact while reserving the shed ring.)
-        here = self.tile_at(ctx, p[0], p[1])
-        on_plant = isinstance(here, dict) and here.get('kind') == 'PLANT'
-        claims = st.setdefault('claim', {})
-        # shared claims, first-come wins: sibling units' walk targets are
-        # invisible in `taken` (per-step only), so two units chase the same
-        # tile across steps and the loser re-walks every time. Skip tiles a
-        # sibling already walks. (Stealing and distance filters both tried,
-        # both lost: thrash and double-walking respectively.)
-        owner_of = {}
-        for u, v in claims.items():
-            if u != i and v:
-                try:
-                    owner_of[(v[0], v[1])] = u
-                except Exception:
-                    pass
-        # animal-crew feed-direct targets are also served: an animal unit
-        # harvesting this wheat tile makes a crop trip here wasted (it is
-        # harvested when the crop unit arrives). Same first-come rule.
-        # (No small-herd gate here: the wheat contention it prevents exists
-        # at every herd size, and bisect showed this side carries 200003's
-        # gain while the animal-side exclusion carried 200004's loss.)
-        for u, v in (st.get('aclaim', {}) or {}).items():
-            if u != i and v:
-                try:
-                    owner_of.setdefault((v[0], v[1]), u)
-                except Exception:
-                    pass
-
-        def act_on(q, cmd):
-            if not q:
-                return None
-            best = None
-            for w in q:
-                t = (w[0], w[1])
-                owner = owner_of.get(t)
-                if owner is not None and owner != i:
-                    continue  # sibling walks it: commitment wins
-                dme = abs(p[0] - t[0]) + abs(p[1] - t[1])
-                if best is None or dme < best[0]:
-                    best = (dme, w)
-            if best is None:
-                return None
-            _, (x, y, _) = best
-            if (p[0], p[1]) == (x, y):
-                claims.pop(i, None)
-                return [cmd]
-            # persist the walk target: without memory two units chase the
-            # same tile across steps and one PASSes every time (~11 wasted
-            # walks/day). The claim is re-validated below each step, so a
-            # stale target is dropped, never stuck.
-            claims[i] = (x, y, cmd)
-            return walk((x, y))
-
-        # sticky claim: keep walking a validated target instead of
-        # re-planning (and oscillating) every step. HARVEST/WATER/DIG only;
-        # PLANT claims are skipped (crop choice + seed budget shift per step).
-        ck = claims.get(i)
-        if ck is not None:
-            cx, cy, ca = ck
-            lst = {'HARVEST': harvs, 'WATER': waters, 'DIG': digs}.get(ca, [])
-            if any((x, y) == (cx, cy) for x, y, _ in lst) and (cx, cy) not in taken:
-                taken.add((cx, cy))
-                if (p[0], p[1]) == (cx, cy):
-                    claims.pop(i, None)
-                    return [ca]
-                return walk((cx, cy))
-            claims.pop(i, None)
-
-        # standing on a ripe/unwatered tile -> act now, no walk wasted
-        if on_plant and (p[0], p[1]) not in self.SHED_TILES:
-            cd = CROPS.get(here.get('crop'), {})
-            try:
-                age = ctx.day - int(here.get('planted_day', 0) or 0)
-                yld = int(here.get('yield_units', 0) or 0)
-            except Exception:
-                age, yld = -1, 0
-            if cd.get('ongoing'):
-                ripe = age >= cd.get('first', 99)
-            else:
-                mx = cd.get('maxyield', 6)
-                maxday = cd.get('maxday', 99)
-                ripe = yld >= mx or age > maxday or \
-                    (age == maxday and here.get('watered_today'))
-            if ripe and yld > 0:
                 return ['HARVEST']
-            if not here.get('watered_today'):
-                # P2: the engine reads fertilized_until_day at WATER time, so
-                # FERTILIZE must land on an EARLIER step. Emit it now and the
-                # block returns WATER next step on the same tile (zero
-                # movement, claim untouched). The hurdle refuses crops whose
-                # gain cannot beat the fertilizer quote.
-                c = self.fert_cmd(ctx, st, i, p)
-                if c is not None:
-                    return c
+        # 1b) on-tile weed
+        if not claimed and isinstance(t, dict) and t.get('kind') == 'WEED' and not on_shed:
+            taken.add((x, y))
+            return ['DIG']
+        # 2) on-tile plant work
+        if not claimed and isinstance(t, dict) and t.get('kind') == 'PLANT' and not on_shed:
+            r, yld = self.ripe(ctx, t)
+            if r:
+                taken.add((x, y))
+                return ['HARVEST']
+            if not t.get('watered_today'):
+                if ctx.day >= STIG_FERT_DAY and int(inv.get('FERTILIZER', 0) or 0) > 0 \
+                        and t.get('crop') in ('MELON', 'STRAWBERRY', 'TOMATO'):
+                    inv['FERTILIZER'] = int(inv.get('FERTILIZER', 0) or 0) - 1
+                    taken.add((x, y))
+                    return ['FERTILIZE']
+                taken.add((x, y))
                 return ['WATER']
-        # bank ripe yield before anything else: a dead ripe tile loses the crop
-        # (an emergency-water-above-harvest tier was tried: +12k on weedy
-        # 200002 but -18k on clean 200004, net -2k. Prioritization is
-        # zero-sum under saturation; weeds need labor, not reordering.)
-        c = act_on(harvs, 'HARVEST')
-        if c:
-            return c
-        # keep-alive: water before planting, always
-        c = act_on(waters, 'WATER')
-        if c:
-            return c
-        # clear weeds (a weed is a dead tile until dug)
-        c = act_on(digs, 'DIG')
-        if c:
-            return c
-        # plant: standing on an empty tile with seeds -> PLANT (claim against
-        # the shared per-step seed budget so the atomic PLANT check never fires)
-        if crop is not None and here is None and (p[0], p[1]) not in self.SHED_TILES:
-            st['sleft'][crop] = int(st['sleft'].get(crop, 0) or 0) - 1
+        # 3) standing on empty: build/place/plant right here
+        if not claimed and t is None and not on_shed:
+            c = self.empty_act(ctx, st, taken, i, (x, y), inv, invs,
+                               shed_left, seeds_left, tgts)
+            if c is not None:
+                return c
+        # 4) shed tile: bank then load
+        if on_shed:
+            c = self.shed_act(ctx, st, taken, i, (x, y), inv, invs,
+                              shed_left, seeds_left, tgts)
+            if c is not None:
+                return c
+        # 5) carrying an unplaced animal: deliver it
+        carry = None
+        for a in ANIMALS:
+            if int(inv.get(a, 0) or 0) > 0:
+                carry = a
+                break
+        if carry is not None:
+            return self.deliver(ctx, taken, i, (x, y), carry)
+        # 6) move to best work within radius
+        return self.seek(ctx, st, dirs, taken, i, (x, y), inv, invs,
+                         shed_left, seeds_left, tgts)
+
+    def empty_act(self, ctx, st, taken, i, pos, inv, invs,
+                  shed_left, seeds_left, tgts):
+        # waiting animal in pocket -> BUILD structure here (taken holds tile)
+        for a in ANIMALS:
+            if int(inv.get(a, 0) or 0) > 0:
+                kind = ANIMALS[a]['structure']
+                taken.add(pos)
+                return ['BUILD_PASTURE' if kind == 'PASTURE' else 'BUILD_COOP']
+        # shed ring reservation: tiles within 2 of the shed stay empty for
+        # structures (pastures exiled to the corner cost ~5 moves/feed).
+        # Plant here only if the field has no room elsewhere.
+        if min(abs(pos[0] - sx) + abs(pos[1] - sy) for sx, sy in SHED_TILES) <= 2:
+            if any(min(abs(x - sx) + abs(y - sy) for sx, sy in SHED_TILES) > 2
+                   for x, y in ctx.empty_tiles):
+                return None
+        # plant deficit crop
+        crop = self.pick_crop(ctx, seeds_left, tgts)
+        if crop is not None and int(seeds_left.get(crop, 0) or 0) > 0:
+            seeds_left[crop] = int(seeds_left.get(crop, 0) or 0) - 1
+            taken.add(pos)
             return ['PLANT', crop]
-        c = act_on(plants_, 'PLANT')
-        if c and crop is not None:
-            return c
         return None
 
-    # ---------------- main dispatch ----------------
-    def run(self, ctx):
-        st = getst(ctx.seat)
-        # per-step wheat budget: feeders claim shed wheat as they go, so the
-        # whole workforce doesn't converge on the shed for crumbs.
-        if st.get('wstep') != ctx.step:
-            st['wstep'] = ctx.step
-            st['wleft'] = int(ctx.shed.get('WHEAT', 0) or 0)
-        n_units = 1 + len(ctx.hands)
-        pos = [ctx.farmer] + ctx.hands
-        inv = ctx.invs
-        # per-step seed budget (atomic PLANT guard)
-        if st.get('sstep') != ctx.step:
-            st['sstep'] = ctx.step
-            st['sleft'] = dict(ctx.seeds)
-        # per-step shed-animal budget: without pdone quota, every unit sees
-        # the same step-start shed snapshot and stampedes it (4 units walk
-        # for 2 animals; the losers walk back empty). Budget it like wheat.
-        if st.get('astep') != ctx.step:
-            st['astep'] = ctx.step
-            st['aleft'] = sum(int(ctx.shed.get(a, 0) or 0) for a in ANIMALS)
-        # roles: recompute at dawn (hands reset nightly), when the crew size
-        # changes, or when animals are waiting with no animal crew assigned
-        owned = sum(ctx.owned.get(a, 0) for a in ANIMALS)
-        placed_n = sum(1 for _, _, t in ctx.structs if t.get('animal') is not None)
-        unplaced = max(0, owned - placed_n)
-        roles = st.get('roles')
-        need_reassign = (st.get('role_day') != ctx.day
-                         or not roles or len(roles) != n_units
-                         or (unplaced > 0 and not any(r == 'animal' for r in roles.values())))
-        if need_reassign:
-            st['role_day'] = ctx.day
-            st['roles'] = self.assign_roles(ctx, st, n_units)
-            st.pop('pres', None)   # tile reservations are per-day
-            st.pop('claim', None)  # walk-target memory is per-day too
-            st.pop('aclaim', None)  # animal-crew targets likewise
-            roles = st['roles']
-        # mid-day hires default to crops; the farmer always crops
-        for u in list(roles):
-            if u >= n_units:
-                del roles[u]
-        while len(roles) < n_units:
-            roles[len(roles)] = 'crop'
-        roles[0] = 'crop'
-
-        cmds = {}
-        taken = set()
-        for i in range(n_units):
-            if i in cmds:
+    def pick_crop(self, ctx, seeds_left, tgts):
+        best, bestd = None, 0
+        for crop, want in tgts.items():
+            if int(seeds_left.get(crop, 0) or 0) <= 0:
                 continue
-            p = pos[i]
-            inv_i = inv[i] or {}
-            c = None
-            # Farmer logistics burst (DSM 112076061 d0 st2-10: the farmer
-            # PICKUPs/PLACEs/FEEDs alongside hands, plants only from st11).
-            # A 3-unit animal crew can't place 5 head before evening (d0 trace:
-            # 1 placed h4, 4 h16 -> unfed nights -> d2 escapes -> replacement
-            # spiral -> d5 broke). While 2+ animals wait in the shed the farmer
-            # works placement first, then sweeps.
-            if roles.get(i) == 'animal' or (i == 0 and unplaced >= 2):
-                c = self.animal_work(ctx, st, i, p, inv_i, taken, pos)
-            if c is None:
-                c = self.crop_work(ctx, st, i, p, inv_i, taken, pos)
-            if c is None:
-                cmds[i] = ['PASS']
-            else:
-                op = c[0]
-                T['exec_tasks'][op] = T['exec_tasks'].get(op, 0) + 1
-                cmds[i] = c
-        ctx.unit_cmds = cmds
+            d = int(want or 0) - int(ctx.standing_crops.get(crop, 0) or 0)
+            if d > bestd:
+                best, bestd = crop, d
+        return best
 
+    def shed_act(self, ctx, st, taken, i, pos, inv, invs,
+                 shed_left, seeds_left, tgts):
+        # bank produce (DROP dumps the WHOLE pocket: only DROP when no
+        # wheat/fert/animals ride along, else PLACE the biggest produce stack)
+        stacks = [(int(v or 0), k) for k, v in inv.items()
+                  if int(v or 0) > 0 and k in ('CARROT', 'TOMATO', 'STRAWBERRY',
+                      'MELON', 'EGG', 'MILK', 'WOOL', 'WHEAT', 'FERTILIZER')]
+        produce = [(v, k) for v, k in stacks
+                   if k not in ('WHEAT', 'FERTILIZER') and k not in ANIMALS]
+        if produce:
+            try:
+                total = sum(int(v or 0) for v in shed_left.values())
+            except Exception:
+                total = 0
+            room = 100 - total
+            carried = sum(v for v, _ in produce)
+            protected = sum(int(v or 0) for k, v in inv.items()
+                            if int(v or 0) > 0 and (k in ('WHEAT', 'FERTILIZER') or k in ANIMALS))
+            if carried <= room and protected == 0:
+                for _, k in produce:
+                    shed_left[k] = int(shed_left.get(k, 0) or 0) + int(inv.get(k, 0) or 0)
+                    inv[k] = 0
+                return ['DROP']
+            produce.sort(reverse=True)
+            v, k = produce[0]
+            m = min(v, room)
+            if m > 0:
+                shed_left[k] = int(shed_left.get(k, 0) or 0) + m
+                inv[k] = int(inv.get(k, 0) or 0) - m
+                return ['PLACE', k, m]
+        # load wheat for unfed herd
+        try:
+            unfed = sum(1 for _, _, s in ctx.structs
+                        if s.get('animal') is not None and not s.get('fed_today'))
+        except Exception:
+            unfed = 0
+        if unfed > 0 and int(inv.get('WHEAT', 0) or 0) < STIG_WHEAT_CARRY:
+            have = int(shed_left.get('WHEAT', 0) or 0)
+            m = min(STIG_WHEAT_CARRY - int(inv.get('WHEAT', 0) or 0), have)
+            if m > 0:
+                shed_left['WHEAT'] = have - m
+                inv['WHEAT'] = int(inv.get('WHEAT', 0) or 0) + m
+                return ['PICKUP', 'WHEAT', m]
+        # load waiting animal for delivery: anything sitting in the shed
+        # unplaced is a placement job (deficit-vs-htgt would read shed stock
+        # as owned and never fetch). deliver() BUILDs when no struct is free.
+        # Cap 2 concurrent deliverers on d0 (uncapped, the whole dawn crew
+        # grabs animals and nobody plants: d0 19->9 plants); 5 after (the d6
+        # wave needs 7+ placed in one day and 2-at-a-time stalls it to d9).
+        carriers = 0
+        for inv2 in invs:
+            for a in ANIMALS:
+                if int(inv2.get(a, 0) or 0) > 0:
+                    carriers += 1
+                    break
+        cap = 2 if ctx.day == 0 else 5
+        if carriers < cap:
+            for a in ANIMALS:
+                if int(shed_left.get(a, 0) or 0) > 0:
+                    shed_left[a] = int(shed_left.get(a, 0) or 0) - 1
+                    inv[a] = int(inv.get(a, 0) or 0) + 1
+                    return ['PICKUP', a, 1]
+        # NOTE: seeds are consumed from stock by PLANT directly (tracked via
+        # seeds_left); units never carry seeds, so no seed PICKUP exists.
+        # load fertilizer from d9
+        if ctx.day >= STIG_FERT_DAY and int(inv.get('FERTILIZER', 0) or 0) < 4:
+            have = int(shed_left.get('FERTILIZER', 0) or 0)
+            m = min(4 - int(inv.get('FERTILIZER', 0) or 0), have)
+            if m > 0:
+                shed_left['FERTILIZER'] = have - m
+                inv['FERTILIZER'] = int(inv.get('FERTILIZER', 0) or 0) + m
+                return ['PICKUP', 'FERTILIZER', m]
+        return None
+
+    def deliver(self, ctx, taken, i, pos, carry):
+        kind = ANIMALS[carry]['structure']
+        cands = [(x, y) for x, y, s in ctx.structs
+                 if s.get('kind') == kind and s.get('animal') is None
+                 and (x, y) not in taken]
+        if cands:
+            tgt = min(cands, key=lambda t2: manhattan(pos, t2))
+            if tuple(pos) == tgt:
+                taken.add(tgt)
+                return ['PLACE', carry]
+            taken.add(tgt)
+            return step_toward(pos, tgt) or ['PASS']
+        cands = [t for t in ctx.empty_tiles if t not in taken]
+        if not cands:
+            return ['PASS']
+        tgt = min(cands, key=lambda t2: manhattan(t2, (4, 4)) * 4 + manhattan(pos, t2))
+        taken.add(tgt)
+        if tuple(pos) == tgt:
+            return ['BUILD_PASTURE' if kind == 'PASTURE' else 'BUILD_COOP']
+        return step_toward(pos, tgt) or ['PASS']
+
+    def seek(self, ctx, st, dirs, taken, i, pos, inv, invs,
+             shed_left, seeds_left, tgts):
+        px, py = pos
+        lastd = dirs.get(i)
+        best = None  # (score, tx, ty)
+        bank = produce_load = sum(int(v or 0) for k, v in inv.items()
+                                  if k in ('CARROT', 'TOMATO', 'STRAWBERRY', 'MELON',
+                                           'EGG', 'MILK', 'WOOL', 'WHEAT'))
+        R = STIG_RADIUS
+        for y in range(max(0, py - 12), min(10, py + 13)):
+            for x in range(max(0, px - 12), min(10, px + 13)):
+                if (x, y) == (px, py) or (x, y) in taken:
+                    continue
+                d = abs(x - px) + abs(y - py)
+                if d > 12:
+                    continue
+                t = self.tile_at(ctx, x, y)
+                val, _kind = 0.0, None
+                if isinstance(t, dict) and t.get('animal') is not None:
+                    val, _kind = self.struct_need(ctx, x, y, t, inv)
+                elif isinstance(t, dict) and t.get('kind') == 'PLANT':
+                    val, _kind = self.plant_need(ctx, x, y, t)
+                elif t is None and (x, y) not in SHED_TILES_SET:
+                    if any(int(inv.get(a, 0) or 0) > 0 for a in ANIMALS):
+                        val = 7.0
+                    elif self.pick_crop(ctx, seeds_left, tgts) is not None:
+                        # shed-ring tiles are weak plant targets (reserved)
+                        val = 6.0 if min(abs(x - sx) + abs(y - sy)
+                                         for sx, sy in SHED_TILES) > 2 else 2.0
+                elif isinstance(t, dict) and t.get('kind') == 'WEED':
+                    val = 1.0
+                if val <= 0:
+                    continue
+                if d > R and val < 9.0:
+                    continue  # radius cap: only bank/load trips go far
+                score = val - STIG_DIST_W * d
+                if lastd is not None and d > 0:
+                    # direction bonus: first step from pos toward (x,y)
+                    s1 = step_toward(pos, (x, y))
+                    if s1 is not None and s1[0] == lastd:
+                        score += STIG_PERSIST
+                if best is None or score > best[0]:
+                    best = (score, x, y)
+        # shed trips: bank when loaded, load when hungry/thirsty-for-seed
+        if bank >= STIG_BANK_LOAD:
+            tgt = min(SHED_TILES, key=lambda s: manhattan(pos, s))
+            if tuple(pos) == tuple(tgt):
+                return None  # shed_act should have banked; fallback PASS
+            return self.walk_to(dirs, i, pos, tuple(tgt))
+        # wheat-load trip: unfed herd + empty pocket + shed stock -> go load.
+        # (Without this, wheat-less units never visit the shed and the herd
+        # starves 2 tiles away from salvation.)
+        if int(inv.get('WHEAT', 0) or 0) <= 0 and int(shed_left.get('WHEAT', 0) or 0) > 0:
+            try:
+                hungry = any(s.get('animal') is not None and not s.get('fed_today')
+                             for _, _, s in ctx.structs)
+            except Exception:
+                hungry = False
+            if hungry:
+                tgt = min(SHED_TILES, key=lambda s: manhattan(pos, s))
+                if tuple(pos) != tuple(tgt):
+                    return self.walk_to(dirs, i, pos, tuple(tgt))
+        if best is None:
+            # nothing in radius: drift to nearest shed (supply) or PASS
+            tgt = min(SHED_TILES, key=lambda s: manhattan(pos, s))
+            if tuple(pos) == tuple(tgt):
+                return ['PASS']
+            return self.walk_to(dirs, i, pos, tuple(tgt))
+        _, tx, ty = best
+        return self.walk_to(dirs, i, pos, (tx, ty))
+
+    def walk_to(self, dirs, i, pos, tgt):
+        s = step_toward(pos, tgt)
+        if s is None:
+            return ['PASS']
+        dirs[i] = s[0]
+        return s
+
+
+SHED_TILES_SET = {(4, 4), (5, 4), (4, 5), (5, 5)}
+ANIMAL_MAXHELD = {'GOOSE': 4, 'COW': 6, 'SHEEP': 6}
+
+STIG = StigExec()
 SCHED = Scheduler()
 MARKET = MarketEmit()
-FIELD = FieldExec()
+
 
 def agent(observation, configuration=None):
     try:
@@ -2012,10 +1105,11 @@ def agent(observation, configuration=None):
         ctx = Ctx(observation)
         SCHED(ctx)
         MARKET(ctx)
-        FIELD(ctx)
+        STIG(ctx)
         n = 1 + len(ctx.hands)
         hands = [ctx.unit_cmds.get(i, ['PASS']) for i in range(1, n)]
         return {'farmer': ctx.unit_cmds.get(0, ['PASS']), 'hands': hands, 'market': ctx.orders}
     except Exception:
         T['errors'] += 1
         return {'farmer': ['PASS'], 'hands': [], 'market': []}
+
