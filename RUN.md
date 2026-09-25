@@ -31,9 +31,10 @@ Setup check — MUST reproduce these exact numbers before changing anything
 ```
 python3 harness.py agent_current.py parity
 ```
-Expected: rewards `[57484, 58916, 51435]`, gates d5-herd/d6-herd+land/d10 PASS x3,
-d0-plants/d12/d15 FAIL (see STATE.md). If your numbers differ by even 1,
-your setup is wrong — stop and fix it, do not "improve" the agent.
+Expected: rewards `[57255, 66496, 62566]`, gates d2-herd/d5-herd/d6-herd+land PASS x3,
+d10 PASS on seed 0 / FAIL on seeds 1-2, d0-plants/d12/d15 FAIL (see STATE.md).
+If your numbers differ by even 1, your setup is wrong — stop and fix it,
+do not "improve" the agent.
 
 Screen a variant (3 seeds, pinned, vs pipe19, ~6 min):
 ```

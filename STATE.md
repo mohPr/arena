@@ -3,6 +3,8 @@
 Base is a generative scheduler/executor agent (Scheduler/MarketEmit/FieldExec).
 Lineage in repo: `agent_base.py` -> `var_sched5.py` -> `var_sched6.py` -> `agent_current.py`.
 `FINDINGS.md` + `SPEC.md` are older analysis; this file overrides them where they differ.
+Round history: P0 (d1 sheep escape) FIXED via urgency-first feeding — base now
+contains it; parity rewards changed, do not compare against pre-fix numbers.
 
 ## Reference: DSM champion (mined from replays, engine-verified)
 - d0: 2 COW + 3 SHEEP + 6 MELON seed + 15 WHEAT seed + 9 prod wheat + 4 hires, spend to ~$0.
@@ -24,42 +26,34 @@ Lineage in repo: `agent_base.py` -> `var_sched5.py` -> `var_sched6.py` -> `agent
 - Shed tiles: (4,4),(5,4),(4,5),(5,5). Structures cluster near shed (free_tile weights manhattan-to-(4,4) x4).
 
 ## Measured numbers (reproduce before changing anything, see RUN.md)
-Parity vs PASS dummy, seeds 0/1/2 — rewards **57484 / 58916 / 51435**:
-- PASS: d5 herd 2C+3S x3, d6 herd>=7 + LAND x3, d10 money>=2500 x3 (~$3.1-3.5k).
-- FAIL: d0 plants 11 vs 15 x3; d5 money ~$560-571 (band 634-901 was mined vs real
-  opponents — vs PASS prices run higher, treat as advisory);
-  d12 money $0.8-3.7k vs $8k; d15 money ~$4-11k vs $20k.
-Matrix vs `opp_pipe19.py`, seed 200001: **31880 vs 151643, margin -119763 (both seats)**.
-Frozen tape `main_v60` (not in repo) on same seed: 109558 vs 111396 (margin -1838).
-So the gap to close is ~118k/game. Production parity got us from ~25k to ~55-65k vs
-PASS; competitive money lags badly.
+Parity vs PASS dummy, seeds 0/1/2 — rewards **57255 / 66496 / 62566**:
+- PASS: d2 herd 2C+3S x3 (P0 fixed); d5 herd 2C+3S x3; d6 herd 8-10 + LAND x3;
+  d10 money>=2500 on seed 0 ($2937) but FAIL on seeds 1 ($2088) and 2 ($103).
+- FAIL: d0 plants 11 vs 15 x3; d5 money ~$1388-1395 (above the 634-901 band mined
+  vs real opponents — the P0 fix moved spend earlier into a bigger d6 wave; vs PASS
+  the band is advisory); d12 money ~$3.8-4.2k vs $8k; d15 money ~$4-7.2k vs $20k.
+Matrix vs `opp_pipe19.py`, seed 200001: **27385 vs 147891, margin -120506 (both
+seats)**. Frozen tape `main_v60` (not in repo) on same seed: 109558 vs 111396
+(margin -1838). Gap to close is ~118.7k/game, all in OUR agent.
+External intel (measured by a helper agent, not yet re-verified here): vs pipe19
+the base suffers ~16-17 escapes/game (bleed all game, not just d1); seed 200003
+loses pinned but GAINS unpinned (+4.2k) — pinned/unpinned disagree there.
 
-## Ranked open problems (work in this order)
-- **P0 LIVE REGRESSION — d1 sheep escape.** d2 herd shows 2C+2S on all 3 parity seeds
-  (a sheep escapes d1->d2 rollover; deficit logic rebuys ~d5, costing ~$350+ output).
-  Introduced by the farmer-fert-pull change. Trace: d1h20-23, two feeders carry wheat,
-  hungry cu1 sheep 2 walks away, both return idle. A claim-hygiene fix attempt produced
-  byte-identical games (zero effect) — that theory is DEAD, do not re-propose it.
-  Fix this first; it confounds everything else (~-6k).
-- **P1 melon volume + d12/d15 curve.** d9 melon tiles 9-11 (need 12+), d10 money OK,
-  but d12 $0.8-3.7k (need $8k), d15 ~$4-11k (need $20k). Drivers: late melon seeds
-  (d1 wallet $7-133 fills ~1 of MELON-12 quota), sale execution (fixed: MELON batch 6,
-  DSM trickles 12/6/6/6/6 — never dump 30).
-- **P2 d0 plants 11 vs 15.** Only 5 of 9 prod-wheat gets planted d0 (labor shape, 4 hands
-  arrive h1). DSM plants 15 d0.
-- **P3 geese 0-2 vs 8-10.** Goose line OFF over delivery fears; DSM runs 8-10 (~$8-10k
-  egg floor). Re-enable only with escape-proof delivery.
-- **P4 feed-delivery ceiling.** Same crew feeds ~13/day that DSM feeds 20+ with.
-  Best known lead: zero-move service (crop units FEED/CARE from pocket when already
-  standing on the structure — our enroute path only COLLECTs today).
-- **P5 wheat replant scale + P6 4th-land discipline.** Downstream of P0-P2.
+## Open shortfalls, by cash size (the scoreboard — HOW is your call)
+- d12/d15 curve: d12 ~$4k vs $8k, d15 ~$4-7k vs $20k. Biggest money, cause unknown.
+- Feed delivery: same crew serves ~13 feeds/day that DSM serves 20+ with.
+- d0 plants 11 vs 15 (only 5/9 prod-wheat planted d0; 4 hands arrive h1).
+- Geese 0-2 vs DSM 8-10 (~$8-10k egg floor, needs escape-proof delivery).
+- CARE cost 0.82 moves/act vs DSM 0.12; sells ~35 units/day vs ~95.
+- Wheat replant scale, 4th-land discipline. Downstream of the above.
 
-## Recently landed (do not revert without A/B)
-Melon sale batch 30->6; d2/d3 melon catch-up quota (top-up to 12 standing+seeds);
+## Recently landed (in the base — resubmitting any of these = instant reject)
+Urgency-first feeding (feed cu>=1 animals before cu=0, fixed the d1 escape);
+melon sale batch 30->6; d2/d3 melon catch-up quota (top-up to 12 standing+seeds);
 farmer fert collection d1 (income $43->$133); d0 trickle caps; hire burst; feed_cap;
 `_fib` off-by-one fix.
 
-## Rejected (never re-propose, all A/B'd negative)
+## Rejected (never re-propose, all A/B'd negative or byte-identical)
 Wallet-gated shopping (-11.8k); chain-planting (-10.9k); hire gates (-26k, bistable);
 goose-heavy herds at current delivery; tomato walls >~12 standing; holding produce for
 price (DSM has no sale timing); land before income (land stays d6/d9/d10);

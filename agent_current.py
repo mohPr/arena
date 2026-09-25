@@ -1300,8 +1300,23 @@ class FieldExec(Layer):
                     return ['COLLECT_FERTILIZER']
         # 4) FEED: escape is permanent and free to prevent. Feed the nearest
         #    unfed animal (shared target: siblings serve other tiles).
+        #    URGENCY FIRST (P0 seed-0 trace): nearest-first left the cu=1
+        #    (2,4) sheep to last; both feeders then deadlocked on it at
+        #    h22-23 (claimer blocked by the crop guard's `taken`, the other
+        #    by the day-claim in `others_a`) and it escaped overnight.
+        #    A cu>=1 animal escapes TONIGHT; a cu=0 one cannot. Serve the
+        #    tonight-escapers first, nearest within each urgency tier.
         if have_wheat and unfed:
-            x, y = min(unfed, key=lambda z: manhattan(p, z))
+            def _feedkey(z):
+                try:
+                    for _x, _y, _t in ctx.structs:
+                        if (_x, _y) == z:
+                            return (-int(_t.get('consecutive_unfed', 0) or 0),
+                                    manhattan(p, z))
+                except Exception:
+                    pass
+                return (0, manhattan(p, z))
+            x, y = min(unfed, key=_feedkey)
             if (p[0], p[1]) == (x, y):
                 taken.add((x, y))
                 aclaims[i] = (x, y)  # hold through the batch (care/harvest)
