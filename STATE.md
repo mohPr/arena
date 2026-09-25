@@ -1,10 +1,11 @@
-# STATE — current truth, 2026-09-25 (base = `agent_current.py`, STIG v1)
+# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v2)
 
 Base is a stigmergic executor (StigExec) + DSM-spec macro (Scheduler/MarketEmit,
 byte-identical to the frozen role-based base). Lineage in repo:
 `agent_base.py` -> `var_sched5.py` -> `var_sched6.py` -> `agent_prev_role.py`
-(role-based, 62k) -> `agent_current.py` (STIG v1, ~90k). The role-based base is
-kept as `agent_prev_role.py` for A/B only — do not develop on it.
+(role-based, 62k) -> STIG v1 (~90k, one-actor-per-tile) -> STIG v2 (same-day
+fert cash, this file). The role-based base is kept as `agent_prev_role.py` for
+A/B only — do not develop on it.
 `FINDINGS.md` + `SPEC.md` are older rate tables; `DSM_OS_SPEC.md` (mined replay
 STRUCTURE) + `STIG_DESIGN.md` (this base's design) + this file override them.
 The 41 DSM replay JSONs (`dsm games/`, ~1.4GB) are NOT in the repo — their
@@ -34,38 +35,47 @@ distilled structure is `DSM_OS_SPEC.md`; `tools/` replays the mining method.
   consumes seed stock directly (units never carry seeds).
 
 ## Measured numbers (reproduce before changing anything, see RUN.md)
-Parity vs PASS dummy, seeds 0/1/2 — rewards **88793 / 90031 / 90503** (total 269327):
-- PASS: d5 herd 2C+3S x3; d6 LAND x3; d10 money>=2500 x3 (melon spike FIRES).
+Pinned parity vs PASS dummy (`LINE_FORCE=pinned`, mixed line), seeds 0/1/2 —
+rewards **83323 / 79602 / 99855** (total 262780):
+- PASS: d5 herd 2C+3S x3; d6 LAND x3; **d6 herd>=7 x3 (FIXED — was FAIL x3)**.
 - FAIL: d0 plants 14 vs 15 x3 — STALE gate (DSM d0 stands ~9-14; the 15 was
   Boey-flavored; the shed-ring reservation costs 1 plant for ~+17k, keep it);
-  d6 herd 5-6 vs 7 (wave cash arrives late); d5 money ~$200-500 vs 634-901;
-  d12 ~$1.7-3.7k vs $8k; d15 ~$1.9-2.8k vs $20k (curve shifted late: money
-  grinds d20+, no d10-15 spike yet).
-Pinch, seed 200001, LINE_FORCE=pinned, opp seat 0 / us seat 1 (`ab_pin_opp.py`):
-- vs pipe19: **62444 vs 179413, margin -116969**.
-- vs pipe18: 62436 vs 179412, margin -116976. vs v57: identical line.
-  (All three opps saturate ~179.4k on this seed; margin moves ONLY via OUR score.)
-- Old role base same setup: 27385 vs 147891, margin -120506. STIG gains +35k
-  absolute, +3.5k margin. Frozen tape `main_v60` (not in repo): margin -1838.
-- Production meters (seed 0, `tools/prod_meters.py`): d11-15 acts 150-165/d,
-  mv/act 0.5-0.9, FEED 17-24/d, gap-hist 53/27/12 (DSM 50/35/9). d1 weak
-  (acts ~24-38, mv/act 2-3.8, FEED 0-1): sparse-work wandering.
+  d5 money ~$200-500 vs 634-901; d10 money<2500 x3 (wave spending eats the
+  melon spike under mixed line); d12 ~$2k vs $8k; d15 ~$2.4-4.5k vs $20k
+  (curve still shifted late: money grinds d16+, no d10-15 spike yet).
+- Meters (seed 0, pinned, `tools/prod_meters.py`): d1 acts 39 (was 24),
+  FEED 4 (was 0); d10-15 acts 177-216/d (was 125-167), mv/act 0.26-0.77
+  (was 0.63-1.71), FEED 13-23/d, gap-0 67% (was 52%, DSM 50%). n=4215 acts
+  (+30%). d1 shuttle tax: mv 182 vs 92 (one day only).
+Unpinned parity (shop luck, NOT the gate — see RNG note): 63823 / 87928 /
+98496. d6 herd PASS seeds 0,1.
+Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`):
+- STIG v2 vs pipe19: **41052 vs 170830, margin -129778** (vs pipe18/v57: same).
+- Old role base same setup: 28852 vs 137754, margin -108902. We score +12.2k
+  over the old base, but the OPP scores +33k more against us (shared-RNG
+  transfer — single-seed margins carry ±30k luck, never trust one seed).
+- Unpinned pinch (old tape): 62444 vs 179413, margin -116969. Frozen tape
+  `main_v60` (not in repo): margin -1838.
 
 ## Open stages (the work — all of it is yours)
-1. d6 wave cash: herd 5-6 vs 7-12. d5 money ~$200-500 vs $750; d1-2 feed hole
-   (FEED 0-1, escapes d2-3) cascades into no-milk d2/d4, no-wool d3, late wave.
-   Hunger gate + full wheat cap contain it; the d0-1 cash allocation is still fragile.
-2. Curve timing: d12/d15 bands. Money arrives d20+, not d10-15. Melon converts now
-   but yields stall 3-5 vs 6 (water/fert coverage d8-12 on the wall).
-3. d1 wandering: sparse-work diffusion (mv/act 2-4). DSM idles (PASS) instead of
-   trekking; ours treks.
+1. d6 wave cash: DONE for herd (d6 herd>=7 passes pinned 3/3, unpinned 2/3;
+   was 5-6 vs 7-12). OPEN for money: d5 ~$200-500 vs $750; d10/d12/d15 bands.
+2. Curve timing: d12/d15 bands. Money arrives d16+, not d10-15. Melon converts
+   now but yields stall 3-5 vs 6 (water/fert coverage d8-12 on the wall);
+   d10 money<2500 pinned x3 (wave spending eats the spike under mixed line).
+3. d1 wandering: PART-DONE (d1 FEED 4, acts 39; mv/act still 4.67 — DSM idles
+   (PASS) instead of trekking; ours treks, one day only).
 4. Terminal weeds (~46 by d27-29 on some seeds): late water coverage under max scale.
-5. THEN: margin screens (pipe19/18/v57, 5 seeds) and optimization BEYOND DSM
-   (DSM is the target to beat, not the ceiling).
+5. THEN: margin screens (pipe19/18/v57, 5 seeds, ALL pinned) and optimization
+   BEYOND DSM (DSM is the target to beat, not the ceiling).
 
 ## Recently landed (in the base — resubmitting any of these = instant reject)
-- One actor per TILE per step (shed excepted): +44% total (187k->269k), killed
-  ~800 no-op acts/game (14-unit WATER piles, 50-HARVEST spam on 5 melons).
+- Same-day fert cash (STIG v2): FERTILIZER banks intraday (was pockets-only
+  till the nightly auto-drop, delaying all fert cash a full day) + a d1-only
+  fert>=2 shed trip. d1 FEED 0->4, d6 herd 5-6->7+, pinned total +5754
+  (257026->262780, worst seed -1780), mid-game acts +30%, mv/act halved.
+- One actor per TILE per step (shed excepted): +44% total, killed ~800
+  no-op acts/game (14-unit WATER piles, 50-HARVEST spam on 5 melons).
 - Hunger gate, SOFT form: starving (cu>=1 + wheat shelf < herd) => wheat P-cap
   FULL quota + seed S-cap 1 (a hard seed-skip stalled the melon wall: -13k seed 2).
 - Shed-ring reservation (no PLANT within 2 of shed while outer room exists):
@@ -81,6 +91,12 @@ Pinch, seed 200001, LINE_FORCE=pinned, opp seat 0 / us seat 1 (`ab_pin_opp.py`):
   batch 6; d2/d3 melon catch-up; d0 trickle caps; hire burst; feed_cap; `_fib` fix.
 
 ## Rejected (never re-propose, all A/B'd negative or byte-identical)
+- Unconditional fert shuttle (fert>=2 trip all game): early fixed but wave
+  3 days late + late labor tax, -8.7k pinned total.
+- Crisis-gated fert trip (unfed + no shed wheat): gate too strict when broke
+  (shedW 1 shuts it off), -20.5k pinned total.
+- Banking-only fert (no trip): d1 FEED still 0 (nothing reaches the shed d1),
+  +428 pinned total (noise) — mechanism absent without the d1 trip.
 - d0 wheat opening-quote rotation (-12k: sold feed wheat, d1 starved).
 - Index-jitter symmetry break (-7k: scattered feeding coordination).
 - Hard hunger seed-skip (seed-fragile -13k seed 2; soft form landed instead).
@@ -96,4 +112,19 @@ Pinch, seed 200001, LINE_FORCE=pinned, opp seat 0 / us seat 1 (`ab_pin_opp.py`):
 d0 = 5 head (2C+3S); melon wall d0-1; strawberry from d3; land exactly d6+d9+d10;
 day-1 hands ~4; herd follows INCOME. d0-plants-15 gate is STALE (see above).
 One variable per variant; production meters before money; TOTAL per seed,
-never the average alone.
+never the average alone. ALL screens `LINE_FORCE=pinned` (see below).
+
+## Methodology note: shared-RNG contamination (found 2026-09-26, binding)
+Weed spawns AND shop unlocks draw from one RNG stream keyed (seed, day), and
+weed draws iterate over EMPTY tiles — so any code change that alters the field
+alters the weed positions AND the shop draws on the same seed. Observed: same
+seed 0, BASE draws ICE_CREAM (cow+ line) while a variant draws YARN d9 (late
+switch to sheep line, 25-head fill, different late game). Consequences:
+- Unpinned parity conflates shop luck with field fixes — it is NOT the gate.
+- The gate is PINNED parity (mixed line fixed): exact rewards above.
+- Shops still differ across variants even pinned (demand noise) — treat
+  <5k pinned-total deltas as noise; the adopt bar (total >=5000, no seed
+  worse than -2000) already accounts for this.
+- Competitive margins are interactive (opp weeds/shops shift with OUR field
+  via the shared stream; measured +33k opp swing same seed) — single-seed
+  margins carry ±30k luck. Confirm winners on 5 seeds x 3 opps, all pinned.

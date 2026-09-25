@@ -921,11 +921,16 @@ class StigExec(Layer):
                  shed_left, seeds_left, tgts):
         # bank produce (DROP dumps the WHOLE pocket: only DROP when no
         # wheat/fert/animals ride along, else PLACE the biggest produce stack)
+        # bank produce AND fertilizer same-day (d1 fert cash funds d1 wheat+
+        # hires: broke-day income that buys tomorrow's feed. Pockets-only
+        # banking delayed all fert cash a full day via the nightly auto-drop,
+        # starving d1 (FEED 0) and cascading into d2-3 escapes + a late wave).
+        # WHEAT stays carried (feed supply); ANIMALS stay carried (delivery).
         stacks = [(int(v or 0), k) for k, v in inv.items()
                   if int(v or 0) > 0 and k in ('CARROT', 'TOMATO', 'STRAWBERRY',
                       'MELON', 'EGG', 'MILK', 'WOOL', 'WHEAT', 'FERTILIZER')]
         produce = [(v, k) for v, k in stacks
-                   if k not in ('WHEAT', 'FERTILIZER') and k not in ANIMALS]
+                   if k not in ('WHEAT',) and k not in ANIMALS]
         if produce:
             try:
                 total = sum(int(v or 0) for v in shed_left.values())
@@ -934,7 +939,7 @@ class StigExec(Layer):
             room = 100 - total
             carried = sum(v for v, _ in produce)
             protected = sum(int(v or 0) for k, v in inv.items()
-                            if int(v or 0) > 0 and (k in ('WHEAT', 'FERTILIZER') or k in ANIMALS))
+                            if int(v or 0) > 0 and (k in ('WHEAT',) or k in ANIMALS))
             if carried <= room and protected == 0:
                 for _, k in produce:
                     shed_left[k] = int(shed_left.get(k, 0) or 0) + int(inv.get(k, 0) or 0)
@@ -1018,8 +1023,9 @@ class StigExec(Layer):
         lastd = dirs.get(i)
         best = None  # (score, tx, ty)
         bank = produce_load = sum(int(v or 0) for k, v in inv.items()
-                                  if k in ('CARROT', 'TOMATO', 'STRAWBERRY', 'MELON',
-                                           'EGG', 'MILK', 'WOOL', 'WHEAT'))
+                                   if k in ('CARROT', 'TOMATO', 'STRAWBERRY', 'MELON',
+                                            'EGG', 'MILK', 'WOOL', 'WHEAT', 'FERTILIZER'))
+        fert_carry = int(inv.get('FERTILIZER', 0) or 0)
         R = STIG_RADIUS
         for y in range(max(0, py - 12), min(10, py + 13)):
             for x in range(max(0, px - 12), min(10, px + 13)):
@@ -1056,7 +1062,11 @@ class StigExec(Layer):
                 if best is None or score > best[0]:
                     best = (score, x, y)
         # shed trips: bank when loaded, load when hungry/thirsty-for-seed
-        if bank >= STIG_BANK_LOAD:
+        # d1-only fert-cash trip: pocket fert -> shed while the crew is broke.
+        # Longer shuttles taxed field labor all game (unconditional: wave 3
+        # days late, -8.7k; crisis-gated: -20.5k). d2+ has emergency P-orders
+        # + nightly sales; only d1 has FEED 0 with no other income path.
+        if bank >= STIG_BANK_LOAD or (fert_carry >= 2 and ctx.day <= 1):
             tgt = min(SHED_TILES, key=lambda s: manhattan(pos, s))
             if tuple(pos) == tuple(tgt):
                 return None  # shed_act should have banked; fallback PASS

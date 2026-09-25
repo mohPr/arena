@@ -35,25 +35,29 @@ python3 -c "import fast_kaggr_env as f; print(f.FastKaggrEnvPy)"
 Setup check — MUST reproduce these exact numbers before changing anything
 (~4 min, 3 games vs PASS dummy):
 ```
-python3 harness.py agent_current.py parity
+LINE_FORCE=pinned python3 harness.py agent_current.py parity
 ```
-Expected: rewards `[88793, 90031, 90503]`, gates d5-herd/d6-land/d10 PASS x3,
-d0-plants/d6-herd/d5-money/d12/d15 FAIL (see STATE.md).
-If your numbers differ by even 1, your setup is wrong — stop and fix it,
-do not "improve" the agent.
+Expected (pinned, mixed line — THE gate): rewards `[83323, 79602, 99855]`,
+gates d5-herd/d6-herd/d6-land PASS x3, d0-plants/d5-money/d10/d12/d15 FAIL
+(see STATE.md). Unpinned rewards vary with shop luck (shared-RNG
+contamination, STATE.md methodology note) — never gate on unpinned.
+If your PINNED numbers differ by even 1, your setup is wrong — stop and fix
+it, do not "improve" the agent.
 
 Production meters (1 game, ~3 min — run BEFORE looking at money):
 ```
-python3 tools/prod_meters.py agent_current.py 0 0
+LINE_FORCE=pinned python3 tools/prod_meters.py agent_current.py 0 0
 ```
-Expected shape: d11-15 acts ~150-165/d, mv/act ~0.5-0.9, FEED ~17-24/d,
-gap-hist ~53/27/12. If your variant breaks this shape, money will follow.
+Expected shape: d1 acts ~39 FEED 4 (shuttle tax mv ~4.7, one day only);
+d10-15 acts ~177-216/d, mv/act ~0.3-0.8, FEED ~13-23/d, gap-0 ~67%.
+If your variant breaks this shape, money will follow.
 
-Screen a variant (3 seeds, pinned, vs pipe19, ~6 min):
+Screen a variant (3 seeds, PINNED, vs pipe19, ~6 min):
 ```
 LINE_FORCE=pinned python3 ab_pin.py pinned agent_current.py my_variant.py 200001 200002 200003
 ```
-Report all 6 lines (A x3 + B x3), never the average alone.
+Report all 6 lines (A x3 + B x3), never the average alone. Adopt bar: base
+TOTAL +>=5000 with no seed worse than −2000 (<5k totals are RNG noise).
 
 Confirm the winner vs all three strong opponents (200001-200005, ~30 min):
 ```
