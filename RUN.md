@@ -13,7 +13,7 @@ python3 -c "import fast_kaggr_env as f; print(f.FastKaggrEnvPy)"
 ```
 
 ## 1. Files
-- `agent_current.py` — the agent you improve (STIG v1, ~90k). Self-contained
+- `agent_current.py` — the agent you improve (STIG v8, ~98k). Self-contained
   (stdlib only), exposes `agent(observation, configuration)`. Optional `REPORT()`
   telemetry. `LINE_FORCE` env var pins the species line (`mixed|cow+|sheep|pinned`);
   unset = shop-drawn. `agent_prev_role.py` = frozen 62k role-based base (A/B only).
@@ -50,8 +50,8 @@ Setup check — MUST reproduce these exact numbers before changing anything
 ```
 LINE_FORCE=pinned python3 harness.py agent_current.py parity
 ```
-Expected (pinned, mixed line — THE gate): rewards `[89412, 92105, 105625]`,
-gates d5-herd/d6-herd/d6-land PASS x3, d0-plants/d5-money/d10/d12/d15 FAIL
+Expected (pinned, mixed line — THE gate): rewards `[92807, 97468, 104297]`,
+gates d5-herd/d6-herd/d6-land/d10 PASS x3, d0-plants/d5-money/d12/d15 FAIL
 (see STATE.md). Unpinned rewards vary with shop luck (shared-RNG
 contamination, STATE.md methodology note) — never gate on unpinned.
 If your PINNED numbers differ by even 1, your setup is wrong — stop and fix
@@ -73,7 +73,7 @@ Prints per-seed A/B + mean/sd/t-stat/wins. Bar: |t|>=2 with majority wins.
 Fresh seeds 300001+ only — seeds 0-2 are cherry range, never adopt off them.
 H2h check for the winner (16 fresh seeds, ~4 min):
 ```
-LINE_FORCE=pinned python3 hscreen.py agent_current.py my_variant.py opp_pipe19.py 16 300001
+LINE_FORCE=pinned python3 tools/hscreen.py agent_current.py my_variant.py opp_pipe19.py 16 300001
 ```
 Legacy 6-seed screens (cherry range, ±8k noise — informative only, never adopt):
 ```

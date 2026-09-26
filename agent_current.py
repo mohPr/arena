@@ -994,8 +994,21 @@ class StigExec(Layer):
 
     def pick_crop(self, ctx, seeds_left, tgts):
         best, bestd = None, 0
+        # TERMINAL CLOSURE (adopted 2026-09-26: +2484/16 t=4.85 wins 14/16;
+        # parity gates identical, pins +3395/+5373/-1328; audit weeds 30->29):
+        # never plant what cannot yield before the d29 lock (probe: 72-78
+        # PLANT acts d20-29/game incl 14 doomed $100 strawberry). Plant-by =
+        # 29 - first_yield_day. Freed labor flows to harvest/bank; drawer
+        # seeds go unspent (sunk).
+        try:
+            _day = int(ctx.day)
+        except Exception:
+            _day = 0
+        _BY = {'WHEAT': 27, 'CARROT': 27, 'TOMATO': 21, 'STRAWBERRY': 19, 'MELON': 19}
         for crop, want in tgts.items():
             if int(seeds_left.get(crop, 0) or 0) <= 0:
+                continue
+            if _day > _BY.get(crop, 29):
                 continue
             d = int(want or 0) - int(ctx.standing_crops.get(crop, 0) or 0)
             if d > bestd:

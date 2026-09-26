@@ -378,3 +378,85 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
   signals (feed_cap/pipeline/hunger-gate read shedW=0 -> emergency buys +
   seed block + wave death). Retro-explains big-carry-12. LESSON: shed stock
   is the market's sensor; carrying supply in pockets blinds it. Walk queue EMPTY.
+- M3 DUSK LIQUIDATION DEAD (all forms, 2026-09-26; external-agent idea):
+  v1 blunt (ripe age>=maxday-1 from hr20, W+C): solo -3.8k/16 t=-1.16 wins
+  6/16 NULL. Meter (dusk_meter.py) showed 40 wheat-3 + 12-20 carrot-2 fires at
+  ~2u avg, ~half on WATERED plants (pure -1u tax, zero risk avoided).
+  v2 unwatered-only REJECTED SIGNIFICANT: solo -12.9k/16 t=-3.19 wins 3/16;
+  audit 300012 collapse (B=58727): d12/d16/d17 unfed_eod=6, money $859 --
+  wheat at ~2.3u vs 6u starves the feed pipeline -> mid-game unfed cascade
+  -> herd/fert/cash spiral. Wheat is FEED: harvesting it early is
+  structurally wrong. v3 carrot-only NULL: solo -2.4k/16 t=-1.26 wins 5/16.
+  Ceiling ~0. LESSON: one-shot banking windows already pay full yield at
+  maxday; early liquidation taxes yield/feed for tile-turnover that doesn't
+  bind. Evening walker slots are as scarce as 8.0 slots. Direction parked.
+- ACK-ORDER QUEUE DEAD BY ENGINE SEMANTICS (2026-09-26, zero variants spent):
+  kaggriculture.py process_market: orders are SAME-STEP per-unit atomic --
+  fills commit instantly per unit until cash/shed runs out, remainder SILENTLY
+  VANISHES (no queue, no backorder, no arrival lag). "Req advances on
+  confirmed arrival" is mechanically void: arrival lag = 0 by construction.
+  trace_market.py retired (its lags measured harvest-bank noise). Real market
+  failure mode = silent partial fills + 10-slot cap; code already guards
+  len(orders)<10 everywhere and self-heals via deficit retry. Ceiling 0.
+- FRONTIER DEAD (both magnitudes, 2026-09-26): topology trace showed moderate
+  scatter (fill 0.38-0.72, shed-dist ~4.6) but biasing planting to fronts
+  backfires. v1 (+1.5) SIG-reject -15.4k/16 t=-3.25 wins 2/16: 7.5 crossed
+  the 7.0 FEED/melon-water boundary -> over-planting (51-62 tiles) -> d11 dry
+  20/51 -> weed spiral (audit 300001). v2 (+0.5, all base boundaries
+  preserved) still -9.9k/16 t=-1.78 wins 8/16 with sd 22k (collapses 59-70k
+  alongside +41k): frontier re-ranking destabilizes WHICH tiles get planted.
+  LESSON: expansion preference is a cliff, not a slope; base 6.0-vs-5.0
+  plant-vs-water ordering is already at the safe limit. Direction parked.
+- SCALE LATCH PARKED (2026-09-26): v1 (S/T/C +4/+2/+2 when 3rd land + cash +
+  feed + room) exactly NULL: +341/16 t=0.16 wins 9/16 (wins to +12k where
+  labor allowed, losses to -16k where not; audit 300012: d15 dry 31/56 -> 30
+  weeds). v2 (+labor-slack gates: zero cu>=1 plants/animals) NEVER FIRES
+  (15/16 seeds byte-identical; lone fire 300013 +10.5k): probe shows
+  dry<=2&unfed==0 holds only 3-4% of d11-26 steps -- the field is CHRONICALLY
+  behind, water labor saturated permanently. DEEP FINDING: no idle labor
+  exists (PASS ~0.4%, dups load-bearing per var_reserve); stands can only
+  spread fixed labor thinner. Latch needs MORE LABOR (paced hire bump on
+  latch-days) = package material for v8, not a single variable. Ceiling ~0
+  solo; candidate for Phase 5 package.
+- PHASE 4 TRADE-TIMING PARKED (2026-09-26): rival falsifier PASSED big
+  (trace_rival: MILK 185->1, WOOL 217->1, MELON 271->167 after rival
+  sales) but BOTH actions vacuous. var_governor (skip buys when rival>=4 +
+  quote<0.5x): NEVER FIRES -- herd capex completes d0-7, craters land d8+
+  (probe: byte-identical buys/rewards 2 seeds). var_frontrun (dump full shed
+  when rival holds supply + quote falling): NEVER FIRES twice -- v1 overnight
+  compare misses intraday craters; v2 intraday-peak compare fires only 27-61
+  steps/game with OUR SHED EMPTY ~90% (we flow bank->shed->market same-day;
+  536 steps already-weak handled by existing path). Lead-lag probe: rival
+  money explodes d10 (melon dump) while our shed holds 0-5 milk/wool --
+  nothing to time-shift. LESSON: h2h loss is MIX + SCALE, not trading (flow
+  equilibrium at cratered prices; buys sunk pre-crater; shed never stocks).
+  Engine: NO inventory recovery (sales +1, buys -1 only) -> first-seller
+  wins, and flow players are never first. Uncontested-family signal:
+  STRAWBERRY price ROSE 161->240 in h2h (nobody sells volume) -- mix edge is
+  production, not timing. Ceiling ~0 for timing; mix = scale-latch territory.
+- SPENT-ONGOING DIG WASH (2026-09-26): var_spentdig (pre-emptive
+  HARVEST-remainder + DIG at 6.5, never water corpses): solo -318/16 t=-0.34
+  wins 8/16; audit weeds 30->28. Mechanism real but value capped: ongoing
+  ripe()=yld>0 already harvests at 8.0 (remainders captured regardless),
+  and turnaround only pays for pre-d18 expiries (wall straw expires d26-28
+  = buzzer). Ceiling ~+1k. Parked; terminal-week expiry handled by Phase 5.
+- TERMINAL CLOSURE ADOPTED (2026-09-26, FIRST PHASE-PLAN WINNER): planting
+  halt past payoff horizon (W/C<=d27, T<=d21, S/M<=d19 = 29-first). Probe:
+  72-78 doomed PLANT acts d20-29/game. Solo +2484/16 t=4.85 wins 14/16
+  (sd 2050, no collapses); parity gates IDENTICAL to base, pins
+  89412->92807 / 92105->97468 / 105625->104297; audit weeds 30->29, FEED
+  21->19, no regressions. New base ~= 98.2k pinned avg. Lesson: the endgame
+  is a harvesting/banking problem; every late planting is negative-EV labor.
+- FEED ESCROW REJECTED UNANIMOUS (2026-09-26): d27+ wheat reserve 2*herd+2
+  (feed d28 instead of dumping @~$50): solo -3130/16 t=-8.06 wins 0/16.
+  Loses on EVERY seed (sd 1554, no ambiguity). The d28-starvation fact
+  stands: starvers still print fert, so feeding buys ONLY animal product <
+  $50 wheat + FEED labor. Direction dead, no retry.
+- PACKAGE (latch + hires) PARKED SUB-BAR (2026-09-26): latch v1 + H(+4)
+  while latched (hands are feed-free day-labor): solo +2143/16 t=1.10 wins
+  8/16 (best sub-bar result ever; wins to +13.5k, losses to -11k). Loss
+  mechanism = over-plant amplification (audit 300014: 67-68 tiles, d18 dry
+  39/67=58% -> weed + feed spiral). No slack gate can save it (v2 proved
+  slack never exists); smaller package untested. LESSON: labor+land scale
+  together or not at all; the combo is the scale vehicle IF water efficiency
+  ever improves. Parked pending a water breakthrough.
