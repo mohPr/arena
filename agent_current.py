@@ -744,6 +744,45 @@ class StigExec(Layer):
             and age >= first
         return r and yld > 0, yld
 
+    def fert_pays(self, ctx, t):
+        """FERTILIZE only when the bonus can land. The engine max()es
+        fertilized_until_day, so repeats on an active tile are pure no-ops --
+        and the on-tile rule fires FERTILIZE instead of WATER while pocket
+        fert lasts, so one unit dumps its whole pocket on one plant over
+        consecutive steps. Ongoing crops tick +1 on production eves
+        (days_since_first % interval == 0) with +1 more iff watered that eve
+        while fert is active: fert applied day d covers eves d..d+2. One-shots
+        bank +1/watering (+2 fert) only inside [(maxday+1)//2, maxday], cap
+        maxyield: fert past maxyield-2 buys nothing."""
+        try:
+            crop = t.get('crop')
+            cd = CROPS.get(crop)
+            if cd is None:
+                return False
+            day = ctx.day
+            fu = t.get('fertilized_until_day', -1)
+            if fu is None:
+                fu = -1
+            if int(fu) >= day:
+                return False  # already active: a repeat is a pure no-op
+            age = day - int(t.get('planted_day', 0) or 0)
+            if cd.get('ongoing'):
+                if crop not in ('STRAWBERRY', 'TOMATO'):
+                    return False
+                first, iv, mx = cd['first'], max(1, cd['interval']), cd['maxyield']
+                for eve in (day, day + 1, day + 2):
+                    dsf = (eve + 1) - int(t.get('planted_day', 0) or 0) - first
+                    if dsf >= 0 and dsf % iv == 0 and dsf // iv + 1 <= mx:
+                        return True
+                return False
+            if crop != 'MELON':
+                return False
+            ws = (cd['maxday'] + 1) // 2
+            yld = int(t.get('yield_units', 0) or 0)
+            return ws <= age <= cd['maxday'] and yld <= cd['maxyield'] - 2
+        except Exception:
+            return False
+
     def plant_need(self, ctx, x, y, t):
         """(value, kind) for a plant tile, 0 if nothing to do."""
         r, yld = self.ripe(ctx, t)
@@ -859,7 +898,7 @@ class StigExec(Layer):
                 return ['HARVEST']
             if not t.get('watered_today'):
                 if ctx.day >= STIG_FERT_DAY and int(inv.get('FERTILIZER', 0) or 0) > 0 \
-                        and t.get('crop') in ('MELON', 'STRAWBERRY', 'TOMATO'):
+                        and self.fert_pays(ctx, t):
                     inv['FERTILIZER'] = int(inv.get('FERTILIZER', 0) or 0) - 1
                     taken.add((x, y))
                     return ['FERTILIZE']
@@ -926,16 +965,20 @@ class StigExec(Layer):
                  shed_left, seeds_left, tgts):
         # bank produce (DROP dumps the WHOLE pocket: only DROP when no
         # wheat/fert/animals ride along, else PLACE the biggest produce stack)
-        # bank produce AND fertilizer same-day (d1 fert cash funds d1 wheat+
-        # hires: broke-day income that buys tomorrow's feed. Pockets-only
-        # banking delayed all fert cash a full day via the nightly auto-drop,
-        # starving d1 (FEED 0) and cascading into d2-3 escapes + a late wave).
-        # WHEAT stays carried (feed supply); ANIMALS stay carried (delivery).
+        # Before the field-fert day fertilizer is CASH, not supply: bank it
+        # same-day (d1 fert cash funds d1 wheat+hires; pockets-only banking
+        # delayed all fert cash via the nightly auto-drop, starving d1).
+        # d9+ it rides pockets to paying applications (fert_pays-gated);
+        # banking it would shuttle supply to the shed and back (PICKUP acts +
+        # pockets clogged with unappliable fert). Surplus sells via the
+        # nightly auto-drop. WHEAT stays carried (feed supply); ANIMALS stay
+        # carried (delivery).
+        keep = ('WHEAT', 'FERTILIZER') if ctx.day >= STIG_FERT_DAY else ('WHEAT',)
         stacks = [(int(v or 0), k) for k, v in inv.items()
                   if int(v or 0) > 0 and k in ('CARROT', 'TOMATO', 'STRAWBERRY',
                       'MELON', 'EGG', 'MILK', 'WOOL', 'WHEAT', 'FERTILIZER')]
         produce = [(v, k) for v, k in stacks
-                   if k not in ('WHEAT',) and k not in ANIMALS]
+                   if k not in keep and k not in ANIMALS]
         if produce:
             try:
                 total = sum(int(v or 0) for v in shed_left.values())
@@ -944,7 +987,7 @@ class StigExec(Layer):
             room = 100 - total
             carried = sum(v for v, _ in produce)
             protected = sum(int(v or 0) for k, v in inv.items()
-                            if int(v or 0) > 0 and (k in ('WHEAT',) or k in ANIMALS))
+                            if int(v or 0) > 0 and (k in keep or k in ANIMALS))
             if carried <= room and protected == 0:
                 for _, k in produce:
                     shed_left[k] = int(shed_left.get(k, 0) or 0) + int(inv.get(k, 0) or 0)
@@ -1029,7 +1072,9 @@ class StigExec(Layer):
         best = None  # (score, tx, ty)
         bank = produce_load = sum(int(v or 0) for k, v in inv.items()
                                    if k in ('CARROT', 'TOMATO', 'STRAWBERRY', 'MELON',
-                                            'EGG', 'MILK', 'WOOL', 'WHEAT', 'FERTILIZER'))
+                                            'EGG', 'MILK', 'WOOL', 'WHEAT'))
+        if ctx.day < STIG_FERT_DAY:
+            bank += int(inv.get('FERTILIZER', 0) or 0)
         fert_carry = int(inv.get('FERTILIZER', 0) or 0)
         R = STIG_RADIUS
         for y in range(max(0, py - 12), min(10, py + 13)):

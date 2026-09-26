@@ -1,10 +1,12 @@
-# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v3)
+# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v4)
 
 Base is a stigmergic executor (StigExec) + DSM-spec macro (Scheduler/MarketEmit,
 byte-identical to the frozen role-based base). Lineage in repo:
 `agent_base.py` -> `var_sched5.py` -> `var_sched6.py` -> `agent_prev_role.py`
 (role-based, 62k) -> STIG v1 (~90k, one-actor-per-tile) -> STIG v2 (same-day
-fert cash) -> STIG v3 (harvest age-gate, this file). The role-based base is kept as `agent_prev_role.py` for
+fert cash) -> STIG v3 (harvest age-gate) -> STIG v4 (fert_pays + fert keep,
+this file; outside agent's fp_fb mechanisms verified + ported, see below).
+The role-based base is kept as `agent_prev_role.py` for
 A/B only — do not develop on it.
 `FINDINGS.md` + `SPEC.md` are older rate tables; `DSM_OS_SPEC.md` (mined replay
 STRUCTURE) + `STIG_DESIGN.md` (this base's design) + this file override them.
@@ -36,53 +38,72 @@ distilled structure is `DSM_OS_SPEC.md`; `tools/` replays the mining method.
 
 ## Measured numbers (reproduce before changing anything, see RUN.md)
 Pinned parity vs PASS dummy (`LINE_FORCE=pinned`, mixed line), seeds 0/1/2 —
-rewards **83323 / 79602 / 99855** (total 262780):
-- PASS: d5 herd 2C+3S x3; d6 LAND x3; **d6 herd>=7 x3 (FIXED — was FAIL x3)**.
-- FAIL: d0 plants 14 vs 15 x3 — STALE gate (DSM d0 stands ~9-14; the 15 was
-  Boey-flavored; the shed-ring reservation costs 1 plant for ~+17k, keep it);
-  d5 money ~$200-500 vs 634-901; d10 money<2500 x3 (wave spending eats the
-  melon spike under mixed line); d12 ~$2k vs $8k; d15 ~$2.4-4.5k vs $20k
-  (curve still shifted late: money grinds d16+, no d10-15 spike yet).
-- Meters (seed 0, pinned, `tools/prod_meters.py`): d1 acts 39 (was 24),
-  FEED 4 (was 0); d10-15 acts 177-216/d (was 125-167), mv/act 0.26-0.77
-  (was 0.63-1.71), FEED 13-23/d, gap-0 67% (was 52%, DSM 50%). n=4215 acts
-  (+30%). d1 shuttle tax: mv 182 vs 92 (one day only).
-Unpinned parity (shop luck, NOT the gate — see RNG note): 63823 / 87928 /
-98496. d6 herd PASS seeds 0,1.
-Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`):
-- STIG v2 vs pipe19: **41052 vs 170830, margin -129778** (vs pipe18/v57: same).
-- Old role base same setup: 28852 vs 137754, margin -108902. We score +12.2k
-  over the old base, but the OPP scores +33k more against us (shared-RNG
-  transfer — single-seed margins carry ±30k luck, never trust one seed).
-- Unpinned pinch (old tape): 62444 vs 179413, margin -116969. Frozen tape
-  `main_v60` (not in repo): margin -1838.
+rewards **78160 / 92317 / 105673** (total 276150, v3 was 262780 = +13370):
+- PASS: d5 herd 2C+3S x3; d6 LAND x3; d6 herd>=7 x3.
+- FAIL: d0 plants (STALE); d5 money ~$200-500 vs 634-901; d10 money<2500 x3;
+  d12 ~$2k vs $8k; d15 vs $20k (curve still shifted late).
+- Competitive screen vs pipe19 pinned 200001-3 (seat 1):
+  **52772/38707/57997 vs v3 49399/27649/62175 = +10253 total**
+  (+3373/+11058/-4178). See v4 note below on the 200003 breach.
+- Meters: FERTILIZE d9-15 collapsed 34->10 (already-active no-ops 19->0);
+  freed ~12 acts/day; d15 money solo seed 0: 10468 vs 3829.
+- STIG v4 ADOPT NOTE (floor breach, explicit): the screen clears the total
+  bar 2x (+10253) but 200003 is -4178 (worse than the -2000 floor). Ticket
+  audit (ab_diag dawns): all three seeds share the early ticket (d5-d9
+  identical money/herd/shops; 200002+200003 share the d12 4th shop too), so
+  all three deltas are REAL, not lottery: +3373 / +11058 / -4178. The loss
+  sits late on the milk-heavy ticket (SMOO+PIZZA+BAKE, strawberry demand
+  highest): fert_pays banks early fert-cash but never builds the watered-eve
+  strawberry bonus (ours ~3/plant vs DSM 7.5), so seeds where the strawberry
+  engine matters most go negative late. Adopted anyway as the PLATFORM for
+  the mandatory follow-up (eve-water coordination, see stage 2): the 92%
+  no-op waste is provably burned labor (7%), the outside agent's controlled
+  6-seed corroborates +62,857 (6/6 up), and any deliberate fert program
+  requires the spam dead first (spam eats eve fert). Revert if eve-water fails.
+- Older tapes: unpinned pinch v2 62444 vs 179413 (-116969); role base pinned
+  28852 vs 137754; frozen `main_v60` (not in repo) margin -1838.
 
 ## Open stages (the work — all of it is yours)
 1. d6 wave cash: DONE for herd (d6 herd>=7 passes pinned 3/3, unpinned 2/3).
    OPEN for money: d5 ~$200-500 vs $750; d10/d12/d15 bands.
 2. Curve timing: MELON SPIKE PART-DONE (v3 age-gate). DSM recipe mined (10
    melons, daily window water, no fert, harvest@6, same-day sale).
-   SCALE GAP REFRAMED 2026-09-26: DSM d15 = 75 stands (S30/W21-29/C8-17/T5-7)
-   + 20 head, sells EGG 18 + CARROT 11 + STRAW 8 + WOOL/MILK/WHEAT/FERT, buys
-   SEEDS ONLY (zero BUY_PRODUCT all game). Ours d15 = 42-50 stands, herd
-   13-21, buys WHEAT 40-60/day while selling 44-55 (bid/ask churn ~-$500/day)
-   + FERT 16 quota buys. d11+ wheat unslash FAILED (-10.4k): stands without
-   water labor = weeds. Buy-side gate FAILED (-4.3k clean-ticket): churn is
-   cu=0 insurance premium; killing it throttles growth via chronic cu=1.
-   NEXT HYPOTHESIS (field passivity, untested): our crew never SEEKS field
-   work — WATER 5.0 / PLANT 6.0 lose to FEED 7-10 / HARVEST 8 globally, so the
-   field gets only on-tile opportunism (WATER 32 vs DSM 66, HARVEST 2 vs 27,
-   PLANT ~10 vs 13-17, PICKUP 37 vs 6). Sparse field -> travel tax -> sparse
-   field (DSM density 75 works on the same 12-unit crew). Test labor-unlock
-   (seek-water/plant values) on MECHANISM first (WATER/day, HARVEST/day,
-   stands, weeds), then screens. d1-wall-completion (c) still open after.
-3. d1 wandering: PART-DONE (d1 FEED 4, acts 39; mv/act still 4.67 — DSM idles
-   (PASS) instead of trekking; ours treks, one day only).
-4. Terminal weeds (~46 by d27-29 on some seeds): late water coverage under max scale.
+   SCALE: DSM d15 = 75 stands + 20 head, buys SEEDS ONLY; our churn mapped
+   (wheat 40-60 buys vs 44-55 sells) but buy-side fix REJECTED (cu=1
+   throttle) and wheat unslash REJECTED (-10.4k, water-bound).
+   MANDATORY NEXT (eve-water coordination): strawberry bonus needs watered
+   eves (ages 10,12,14,16 for d2-planted; +1/eve, +1 w/ active fert); ours
+   ~3/plant vs DSM 7.5 because WATER is opportunistic (32/day) never
+   eve-targeted. fert_pays (v4) is the platform (spam dead); now aim units
+   at eve strawberries (carry fert TO them + water the eve). Outside agent's
+   census test: FERTILIZE on STRAWBERRY age in {9,13}-window per day d15-25;
+   if <5/day with shed fert>=12, the eve pass is the ~$30k lever. NOTE their
+   deadline-escalation REJECT (-10.5k controlled): weeds die from lack of
+   HANDS (over-planted field), not urgency — size the eve program within the
+   freed ~12 acts/day, don't add labor.
+3. d1 wandering: PART-DONE (FEED 4). Outside agent measured, unfixed:
+   prediction is a PASS-if-idle rule (no work in radius + pocket empty);
+   falsifier: d02 money < $301 on 200001.
+4. Terminal weeds: v4 freed water labor (WATER d13 51 vs 40 on their trace);
+   mid-game deaths fall; terminal (d29 ~32-42) remains. Ruled out: urgency
+   escalation. Candidates: eve program sizing (above), late water coverage.
 5. THEN: margin screens (pipe19/18/v57, 5 seeds, ALL pinned) and optimization
    BEYOND DSM (DSM is the target to beat, not the ceiling).
 
 ## Recently landed (in the base — resubmitting any of these = instant reject)
+- Fert pays + fert keep (STIG v4, outside-agent fp_fb mechanisms, verified at
+  engine level and ported): (1) `fert_pays()` gates FERTILIZE — never on an
+  active tile (engine max()es fertilized_until_day: repeats are silent
+  no-ops, and the on-tile rule camped units dumping whole pockets);
+  ongoing (STRAW/TOMATO) only when a production eve falls in the 3-day
+  window (end-of-day ticks +1/eve, +1 more iff watered that eve while fert
+  active; max 8/plant); melon only in-window with yield<=max-2.
+  (2) keep-logic: fert banks intraday only pre-d9 (cash); d9+ it rides
+  pockets to paying applications (no shed round-trip: PICKUP acts + clogged
+  pockets), surplus sells via nightly auto-drop; produce_load excludes
+  post-d9 pocket fert (phantom bank trips). My d1-trip kept (pre-d9 bank
+  path). Interacts with v3 age-gate (complementary: gate blocks harvest
+  trap, pays blocks fert waste). Screen +10253 (see measured numbers).
 - Harvest age-gate (STIG v3, `ripe()`): non-ongoing crops need age>=first
   (melon 10). Engine HARVEST fails below first_yield_day even with yield
   banked; acting on it camped units all day spamming no-ops (d9: 6 acts on
@@ -164,12 +185,16 @@ day-1 hands ~4; herd follows INCOME. d0-plants-15 gate is STALE (see above).
 One variable per variant; production meters before money; TOTAL per seed,
 never the average alone. ALL screens `LINE_FORCE=pinned` (see below).
 
-## Methodology note: shared-RNG contamination (found 2026-09-26, binding)
-Weed spawns AND shop unlocks draw from one RNG stream keyed (seed, day), and
-weed draws iterate over EMPTY tiles — so any code change that alters the field
-alters the weed positions AND the shop draws on the same seed. Observed: same
-seed 0, BASE draws ICE_CREAM (cow+ line) while a variant draws YARN d9 (late
-switch to sheep line, 25-head fill, different late game). Consequences:
+## Methodology note: shared-RNG contamination (found 2026-09-26, binding;
+independently confirmed by outside agent at engine level)
+_end_of_day builds ONE Random((seed*1_000_003)^day) per day; _spawn_weeds
+consumes rng.random() per EMPTY tile of BOTH farms in player order, and only
+then a shop unlock is drawn (every 3rd day: d3,6,9,12,..., with replacement).
+So any code change that alters EITHER farm's empty tiles re-deals weeds AND
+shops from that day on — including the OPPONENT's game (measured: same opp
+scores 147k/158k/179k/188k on seed 200001 across our variants, opp code
+untouched). Observed here: same seed 0, BASE draws ICE_CREAM (cow+ line)
+while a variant draws YARN d9 (late switch to sheep line). Consequences:
 - Unpinned parity conflates shop luck with field fixes — it is NOT the gate.
 - The gate is PINNED parity (mixed line fixed): exact rewards above.
 - Shops still differ across variants even pinned (demand noise) — treat
