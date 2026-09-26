@@ -369,6 +369,32 @@ class Scheduler(Layer):
         st['crops'] = crop_targets(ctx.day)
         st['htgt'] = herd_target(ctx.day, st['line'])
         st['lwant'] = land_want(ctx.day, st)
+        # SCALE LATCH (adopted 2026-09-26 as v10: +6966/16 t=2.79 wins 13/16;
+        # audit-seed 200001 +11491; parity [+1206,-15053,+12264]):
+        # after 3rd land while funded (d11-26, money>3000, shed wheat covers
+        # herd, 6+ empties), S/T/C +4/+2/+2. v9's shed-dup fix freed ~10
+        # acts/day, supplying the water labor the latch needs. COST: seed1-
+        # type tails (-15k, unrecoverable weeds when the field is already
+        # behind at latch time); audit weeds 27->36 on 200001 but score still
+        # +11.5k. NO hire-half: max-quota logic made H(4) dead code (16-seed
+        # scores byte-identical with/without it). Roll back on mean-negative.
+        try:
+            _q = list(ctx.farm.get('unlocked_quadrants', []) if isinstance(ctx.farm, dict)
+                      else getattr(ctx.farm, 'unlocked_quadrants', []))
+            _owned = len(_q) - int(st.get('quad0', len(_q)))
+        except Exception:
+            _owned = 0
+        try:
+            _herd = sum(int(v or 0) for v in ctx.herd.values())
+            _shedW = int(ctx.shed.get('WHEAT', 0) or 0)
+        except Exception:
+            _herd, _shedW = 99, 0
+        _lat = (11 <= ctx.day <= 26 and _owned >= 2 and ctx.money > 3000
+                and _shedW >= _herd and len(ctx.empty_tiles) >= 6)
+        st['latched'] = bool(_lat)
+        if _lat:
+            for _k, _inc in (('STRAWBERRY', 4), ('TOMATO', 2), ('CARROT', 2)):
+                st['crops'][_k] = int(st['crops'].get(_k, 0) or 0) + _inc
 
 import os as _os
 # Experiment control: LINE_FORCE=mixed|cow+|sheep pins the species line so

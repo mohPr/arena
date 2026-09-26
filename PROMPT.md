@@ -1,13 +1,12 @@
-# TASK BRIEF — the 120k agent: `agent_current.py` (STIG v9, solo ~109k) -> solo average 120k, zero weeds, zero escapes, every step useful
+# TASK BRIEF — the 120k agent: `agent_current.py` (STIG v10, solo ~109-119k) -> solo average 120k, zero weeds, zero escapes, every step useful
 
 Work ONLY inside this folder (setup + every command: `RUN.md`). Push your work to a branch when done; the final agent must also be pasted COMPLETE (see delivery).
 
 ## THE FINAL GOAL — all four hold at once, or the job is not done
 
 1. **Solo average 120k.** `LINE_FORCE=pinned python3 harness.py agent_current.py parity`
-   (seeds 0,1,2 vs PASS dummy). Today: `[98024, 110668, 118618]`, average **~109.1k**.
-   Target: average **>= 120000**. That is +11k of REAL cash, measured, per seed
-   reported (never the average alone).
+   (seeds 0,1,2 vs PASS dummy). Today: `[99230, 95615, 130882]`, average **~108.6k**
+   pinned (fresh-16 mean ~119.0k). Target: average **>= 120000**.
 2. **Zero weeds, zero escapes.** `LINE_FORCE=pinned python3 tools/coverage_audit.py
    agent_current.py 200001` (and 200002) must print **AUDIT: ALL PASS**, i.e.
    max standing weeds 0 every day, herd never shrinks, every animal fed at end
@@ -63,10 +62,12 @@ AND each part alone.
   pre-crater; shed never stocks). The only live signal: UNCONTESTED families
   (strawberry ROSE 161->240 in h2h — nobody sells volume). Goal: production mix
   toward uncontested families. No market timing, ever.
-- **Problem 6 — SCALE VEHICLE (parked, needs water first).** Latch (+4S/+2T/+2C
-  targets when funded) was exact NULL (+341); latch + hires (+4 hands) was
-  +2143 sub-bar (t=1.10) with over-plant collapses. The combo is the scale
-  vehicle IF water efficiency ever improves (Problem 1 first, then this).
+- **Problem 6 — SCALE VEHICLE (landed v10, tail remains).** Latch (+4S/+2T/+2C
+  targets when funded) adopted STIG v10 (+6966/16, t=2.79, 13/16): v9's
+  shed-dup fix supplied the water labor v8 lacked. Latch-hires proven DEAD
+  CODE (max-quota logic; byte-identical scores). Remaining COST: seed1-type
+  tails (-15k when field behind at latch time). Next: a tail-tamer binding
+  ONLY in behind-states, or h2h validation.
 - **Problem 7 — WALKS (~51.5%).** Every class measured so far is transactional.
   Reservation cut walks 6pp and STILL lost money (redundancy lesson). Goal: find
   walks that are truly empty (motion trace must convict them), or more payload
@@ -81,7 +82,7 @@ Do not strip buffers. Feed the flywheel: stands -> volume -> cash -> stands.
 
 1. `pip install kaggle-environments==1.32.7`, `cd` into this folder.
 2. `LINE_FORCE=pinned python3 harness.py agent_current.py parity` MUST print
-   rewards EXACTLY `[92807, 97468, 104297]`. Off by even 1: setup is wrong,
+   rewards EXACTLY `[99230, 95615, 130882]`. Off by even 1: setup is wrong,
    fix it first, touch nothing.
 3. `LINE_FORCE=pinned python3 tools/coverage_audit.py agent_current.py 200001`
    MUST fail exactly like this (every FAIL is a work order): `WEEDS: FAIL
@@ -170,8 +171,9 @@ atomic, no queue exists); frontier v1/v2 (planting bias: priority inversion
 rival purchase-governor + sell front-run (VACUOUS: buys finish pre-crater,
 shed never stocks); spent-ongoing DIG (wash: 8.0 harvests already capture);
 feed escrow (0/16 unanimous: starvation is cash-positive). (`STATE.md` holds
-the evidence.) PARKED (not dead, needs a water breakthrough first):
-latch + hires package (+2143 sub-bar).
+the evidence.) PARKED: (none -- the package graduated to v10 minus dead hires).
+DEAD since: anti-spiral flat cap-55 (cuts good-seed scale), eve-water 9.0
+(priority re-time, no new labor), latch-hires (dead code: max-quota).
 
 ## FINAL DELIVERY — two copy buttons, no exceptions
 

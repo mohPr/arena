@@ -486,3 +486,28 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
   slack never exists); smaller package untested. LESSON: labor+land scale
   together or not at all; the combo is the scale vehicle IF water efficiency
   ever improves. Parked pending a water breakthrough.
+- W-ROUND SECOND WAVE (2026-09-26, all vs v9 base, fresh 300001-300016):
+  ANTI-SPIRAL CAP-55 REJECTED NULL (+372/16 t=0.22 wins 9/16): no planting
+  while 55+ stands d11-26. Flat caps cut good-seed scale too (300007: -12.8k
+  where scale worked). DSM-scale lesson holds: cap the SPIRAL state, not
+  scale -- but EOD dry-fraction can't separate them (base runs 30-45% dry
+  routinely; collapse 300013 d15 49% overlaps). No retry as a flat cap.
+  EVE-WATER-9.0 REJECTED NULL (+174/16 t=0.11 wins 8/16): eve WATER 8.0->9.0
+  (pierce R=3 + outrank ripe HARVEST). Far-eve gains eaten by harvest delays
+  + walk. Radius mechanism disproven as a scalar tweak.
+- SCALE LATCH ADOPTED STIG v10 (2026-09-26, THIRD PHASE-PLAN WINNER): latch v1
+  scale-half ALONE on v9 (S/T/C +4/+2/+2 after 3rd land while funded d11-26).
+  The package's H(+4) hire-half was PROVEN DEAD CODE: hire quota uses
+  max(quota,qty) and base quotas already cover hands, so H(4) never fires --
+  16-seed scores byte-identical with/without it (both +6966 t=2.79 wins
+  13/16). v9's shed-dup fix (~10 freed acts/day) supplied the water labor v8
+  lacked. Diligence: parity [99230,95615,130882] (seed0 +1206, seed2 +12264,
+  seed1 -15053); audit-seed 200001 paired +11491 DESPITE weeds 27->36 and
+  water worst 45%->56% (extra stands pay for their weeds). COST (priced in):
+  seed1-type tails (-15k, unrecoverable weeds when field already behind at
+  latch time -- extra targets become the unwatered tail because far-PLANT 6.0
+  outranks routine WATER 5.0, so units walk past thirsty plants to plant).
+  Fresh-16 mean ~= 119.0k (+7.0k); pinned mean 108.6k (flat vs v9 108.8k on
+  seeds 0-2 lottery). Gap to 120k ~= 1k fresh / ~11k pinned. Next: tail-tamer
+  that binds ONLY in behind-states (dry-fraction overlaps -- needs a better
+  signal), or h2h validation (solo scale must survive the rival).
