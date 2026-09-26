@@ -247,3 +247,83 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
 - STIG v7 (seed-pile cut): d13+ S(STRAW) 8->3 (+4->+2 pulse). Drawer held
   $2420 dead (17 straw seeds) while stands SHRINK by policy. +3.7k/6-seed,
   perfect RNG control, parity +1.1k. Smallest adoption; hygiene compounds.
+- Stage 4c-1 (DSM d0-d1 anatomy, replay 112076061 audited): DSM d0 = 1C+5W,
+  then 1C+3S+4H, SELL-W-1/step cycling, 6 MELON (h7/h9/h12), 15 W-seed,
+  ends $6/15 plants. DSM d1 = 8 HIRE + SELL FERT 1+1+3 ($500 by h11) +
+  12x BUY MELON-2 attempts h8-h13 (~5-6 fill) + 6 feed wheat; ends $1/
+  20 plants. DSM d2 = 6 HIRE + SELL FERT 4 + 9 STRAWBERRY-1 + 3 MELON-1.
+  Correction to old "d0 trilemma" note: d1-melon money EXISTS (d1 fert
+  ~$500); the gap is TIMING (we bank/sell a day late), not d0 budget.
+  Ours d1: wallet $0-4 all day, fert 3 by h23, melon fills 0; d2 dawn $12.
+- var_shed2 REJECTED (dawn-stock reserve: leave 2W in shed d0-d1 when
+  pockets cover all unfed; diagnosed shed-0 d1 dawn from pocket stranding
+  + 1-day auto-drop delay): trace moved +1 melon d1/+2 d3 then converged
+  (d6 money identical); totals ~10 vs 11. Peashooter, no parity run.
+- var_fertup REJECTED (COLLECT_FERTILIZER 4.5->7.5 d0-d1): d1 cash $12->224,
+  d10 gate PASSES 3/3 first time, parity +8.2k solo [86966,98522,109830]
+  vs [89412,92105,105625]. BUT 6-seed h2h CLEAN reject: abs -68.2k
+  (257963 vs 326207), margin -23.7k, opp lottery -44k. LESSON: solo-parity
+  gains from earlier selling do NOT survive shared-pool price competition
+  (town MARKET pool is shared; vs pipe19's heavy selling our early spike
+  sells into crashed quotes). Solo parity alone never adopts spike work.
+- CAUTION rerun 2026-09-26: `python -c harness.parity` WITHOUT
+  LINE_FORCE set runs UNPINNED (line=mixed) — scores ~8k off pinned.
+  Always `LINE_FORCE=pinned` prefix; never compare mixed vs pinned.
+- Stage 4c-2 (walk split, instrumented trip decisions d0-15 solo 200001):
+  trip_field 1674, trip_drift 188 (46% of shed-bound!), trip_wheat 151 (37%),
+  trip_bank 68 (17%). Shed PICKUPs 222, of which WHEAT 182. Mid/late walks
+  ~90% supply-shuttle; d0-d1 mostly positioning.
+- var_bank8 REJECTED (exclude pocket WHEAT from bank-trip test; wheat is keep
+  so 4W+4P should not trip BANK_LOAD=8): bank acts 48->34 BUT walks unchanged
+  (system compensates via wheat/drift trips). Attacked the smallest slice.
+- var_stay REJECTED alone (drift->PASS): walks -3.2pp, escapes fixed, BUT
+  weeds 30->39 (drift walks gave incidental coverage) and fert loads 19->5
+  (piggyback starvation). Audit regression, no parity run.
+- var_weed-pierce NO-OP (weeds exempt from radius cap): byte-identical game.
+  Reason found: binding constraint is PRIORITY (1.0 vs water 5.0), not radius;
+  late labor saturated by watering so weeds never win. Drift (early, no weeds)
+  and weeds (late, no drift) don't overlap in time.
+- var_weedstay REJECTED (stay + weed 5.5 priority + pierce): audit weeds
+  30->19, walk 51.2->47.5%, escapes fixed — BUT parity -17.3k
+  [59520,101726,108592] and d6 herd>=7 FAILS 3/3. LESSON: shed visits are the
+  animal-delivery channel (deliveries piggyback on presence); cutting visits
+  stalls the d6 wave (~10-30k). Any walk-cut must preserve d6 delivery
+  throughput (explicit delivery trips or keep drift until wave done).
+- Standing facts: pockets empty nightly (wheat reload trips ~9/d structural);
+  dry tiles are the weed SOURCE (57% worst day -> nightly spawns outpace DIGs);
+  labor pie fits on paper (~120 work + walks in 312 steps) so walks are the
+  only fat — but they carry deliveries+fert-loading piggybacks.
+- INFRA 2026-09-26: full games are ~4s, not minutes. tools/pscreen.py (paired
+  solo A/B, 8 workers) + tools/hscreen.py (paired h2h A/B vs opp, margin-delta
+  t-stat). Fresh seeds 300001+ avoid cherry bias. SE for solo ~1300 at n=48,
+  ~3-4k at n=16. Bar: |t|>=2, wins majority. 6-seed screens retired for
+  decisions (only ±8k+ visible); parity 0,1,2 kept as the 120k gate.
+- ENGINE VERIFIED (kaggriculture.py): WATER on ongoing crops banks NOTHING
+  (438-443: only one-shots bank in-window; ongoing just set watered_today);
+  ongoing +1 ticks nightly unconditionally, fert +2 needs watered+fert-active
+  (786-801); 2x unwatered -> WEED; fertilizer_available=True OUTSIDE the fed
+  branch (829: starving animals still print fert); one-shot decay past
+  maxyield -> WEED every 2 steps (752-766); per-unit re-quote loop (596-618);
+  shed overflow DISCARDED at cap 100 (_drop_inventories_to_shed).
+- var_h2o REJECTED (water S/T only fert-active eves): solo -10.1k/16 t=-5.0.
+  Sync-skip synchronized the wall into the same thirst day (rescue stampede,
+  weeds 30->39). var_h2o2 REJECTED (desync cohorts by planted parity):
+  solo -9.6k/16 t=-2.6, sd DOUBLED. var_combo1 (h2o2+weedstay) REJECTED:
+  solo -14k/16 t=-4.0. Failure mode named: SPAWN SPIRAL — skipped tiles open
+  holes, empty tiles spawn weeds by RNG, DIG labor < spawn rate on some seeds
+  (-27..-32k tails on 4/16 seeds: straw wall 119->70u). The streak-0 buffer of
+  daily watering is load-bearing robustness, not waste. Direction dead.
+- var_fertup REJECTED FINAL (16 fresh seeds): solo -13.5k t=-3.1 wins 1/16;
+  h2h margin -5.5k t=-1.8. The +8k on seeds 0-2 was cherry luck. d10-gate 3/3
+  noted but worthless without money.
+- var_weedstay REJECTED FINAL: solo -13.4k t=-4.0 wins 2/16; h2h -12.2k
+  t=-3.5. Audit progress (weeds 30->19, walk -3.7pp) does not survive money.
+- BRIEF CORRECTIONS (both sides measured): d28-29 starvation is CASH-POSITIVE
+  (unfed prints $75 fert/d x2d; feeding it back -2.3k). Goal is "no escapes",
+  never "feed d28". "No dry days" contradicts the engine (ongoing water = $0
+  yield); usefulness = water only when it pays or prevents streak-2.
+- External replication (second agent, 48 seeds): goose-cutoff-d11 +2.4k t=1.8
+  (below bar; convergent with our nogeese h2h reject — stays dead); wheat
+  buy-caps negative (churn is productive: fed animal ~$125-155/d on ~$50
+  feed); trickling sales monotonically worse (shed cap discards); 13 hands
+  -839 (flat), 14+ catastrophic (fib+slots+collisions). Nothing over t=2.
