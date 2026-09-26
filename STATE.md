@@ -343,3 +343,15 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
   Mechanism: HARVEST 8.0 spent on partial wheat crowds out wave-critical
   work (priority crowding); decay weeds (DIG 1.0) were the cheaper problem.
   LESSON: 8.0-priority slots are the scarcest resource; spend only on cash.
+- tools/motion_trace.py ADOPTED (external instrument, observation-only,
+  walk_to hook): duplicate same-step intents, reversals, transition-based
+  weed births (from_plant/from_empty). Base 200001: 1343 dups/3722 calls
+  (36%; 1044 field + 299 shed-structural), 127 reversals, weeds 77 plant /
+  22 empty transitions. METHOD CORRECTION: standing-weed counts (our "50
+  decay + 32 thirst") undercount re-weeds and can't attribute — use
+  transitions; old split retired as unproven.
+- var_reserve REJECTED (taken.add seek destination; kills field dups 1044->0,
+  walks 51.2->45.8%): solo -10k/16 t=-1.48 wins 6/16, sd DOUBLED (27k),
+  +12.7k on 200001 was cherry luck; parity d10/d12 FAIL, escapes 0->2.
+  LESSON: convergent walks are load-bearing redundancy (urgent-tile coverage,
+  feed rescue); spreading thins response. Waste-that-protects.
