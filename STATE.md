@@ -355,3 +355,14 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
   +12.7k on 200001 was cherry luck; parity d10/d12 FAIL, escapes 0->2.
   LESSON: convergent walks are load-bearing redundancy (urgent-tile coverage,
   feed rescue); spreading thins response. Waste-that-protects.
+- SPIKE AUDIT 2026-09-26 (base 200001 d8-14): seed piles grow while wallet
+  starves (W9->28, C4->16, S capped 14 = $1400; money $1559-3200) — but the
+  pile is planter-through-wall-burst buffer, see next.
+- var_seedcap REJECTED SIGNIFICANT (halve SEEDCAPs, melon exempt 14): solo
+  -7.9k/16 t=-2.87 wins 5/16. The pile is not dead capital: caps starve
+  planters through thin-wallet days and the wall stalls.
+- META-LESSON (5 deaths): every removed buffer dies — daily-water (spiral),
+  drift visits (wave), convergent walks (rescue), seed piles (wall). The
+  agent may be buffer-stripped; DSM carries big buffers ($13k piles, 75
+  stands, water-everything) and out-earns via SCALE. Remaining gap is a
+  stands->volume->cash flywheel threshold, not average efficiency.
