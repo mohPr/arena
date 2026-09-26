@@ -63,12 +63,14 @@ Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`
 2. Curve timing: MELON SPIKE PART-DONE. Mined DSM recipe: 10 melons (6 d0+4 d1),
    water EVERY melon EVERY day once age>=7 (yield window 6-12, +1/day, cap 6),
    NEVER fert melon, harvest each at 6 (d0-cohort d10, d1-cohort d11-12), sell
-   same day (36/18/6). Our gaps: (a) FIXED v3 — harvest age-gate, see landed;
-   (b) OPEN — d9 water 3/11 + d11 water 2/7 on land/wave days (priority, not
-   crew: same ~10 units as DSM, ours spends them on PLACE/PICKUP); (c) OPEN —
-   wall completes d3-4 not d1 (d1 plants no melon: cash + Scheduler quote);
-   second cohort cash arrives d13-15 not d11-12 (~2-3 day curve shift);
-   (d) MINOR — d10 harvest 24 sell 18 (1-day carry lag; DSM 36/36 same day).
+   same day (36/18/6). Our gaps: (a) FIXED v3 — harvest age-gate;
+   (b) PARKED — d9/d11 water priority: mechanism fires but ~+$500 effect is
+   unmeasurable through the ±15k shop lottery (see rejected + methodology);
+   (c) OPEN — wall completes d3-4 not d1 (d1 plants no melon);
+   (d) REFRAMED — the d15 gap ($6k vs $20k) is NOT melon, it's SCALE: DSM d15
+   sells EGG 18 + CARROT 11 + STRAW 8 + WOOL/MILK/WHEAT/FERT at ~21+ head.
+   Next dig: DSM d12-15 money composition (herd size/mix, strawberry count,
+   carrot program) vs ours, then swing at the biggest scale delta.
 3. d1 wandering: PART-DONE (d1 FEED 4, acts 39; mv/act still 4.67 — DSM idles
    (PASS) instead of trekking; ours treks, one day only).
 4. Terminal weeds (~46 by d27-29 on some seeds): late water coverage under max scale.
@@ -104,6 +106,16 @@ Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`
   batch 6; d2/d3 melon catch-up; d0 trickle caps; hire burst; feed_cap; `_fib` fix.
 
 ## Rejected (never re-propose, all A/B'd negative or byte-identical)
+- Yield-window melon WATER 8.5 (two forms): ungated -12577 (-16096/+1381/
+  +2138); age>=8-gated -22430 (-20045/+3595/-5979). Mechanism FIRES
+  (d9 coverage 3/11->10/11, wall yields on schedule) but the effect (~+$500
+  melon) drowns in the shop lottery (see methodology). PARKED, not wrong —
+  revisit only as part of a big-effect variant.
+- d6 crew diversion (found via the bump): d6 age-6 wall water pulled units
+  off bank trips (DROP 5->3) -> MarketEmit missed 2nd LAND + 2 animals
+  (LANDx2->x1, 7 head->5). d6/d7 crew is untouchable: first LAND + wave buys
+  need every DROP. Any future variant that moves d6 units must re-verify
+  d6 LAND count in market trace.
 - Never-fert-melon: -5186 total (-12110/+1220/+5704). Lesson: fert is our
   water-miss crutch (d9/d11 collapses) — removing it before fixing coverage
   caps the wall at 3-4. DSM never ferts because DSM never misses water.
@@ -145,3 +157,12 @@ switch to sheep line, 25-head fill, different late game). Consequences:
 - Competitive margins are interactive (opp weeds/shops shift with OUR field
   via the shared stream; measured +33k opp swing same seed) — single-seed
   margins carry ±30k luck. Confirm winners on 5 seeds x 3 opps, all pinned.
+- SHOP LOTTERY dominates (found 2026-09-26, binding): any field delta re-deals
+  weed draws -> shop unlocks from ~d8 on. Measured: identical play to d7,
+  one d8 planting delta (PLANT 13 vs 8) -> d9 ICE_CREAM_SHOP becomes PET_CAFE,
+  d12 PIZZA_SHOP becomes SMOOTHIE_SHOP -> -20k final on 200001 while mid-game
+  was AHEAD (+$2.4k d11). Lottery is ±15k per seed — LARGER than the 5k
+  adopt bar. Consequences: only big-effect variants (>>10k) are measurable
+  through it; micro-fixes (~$500) are unmeasurable — park them, swing big.
+  A mechanism can be CORRECT (coverage/yields improve on trace) and still
+  fail the screen; that is the bar doing its job, not a wrong diagnosis.
