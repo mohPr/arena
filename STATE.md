@@ -452,6 +452,32 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
   Loses on EVERY seed (sd 1554, no ambiguity). The d28-starvation fact
   stands: starvers still print fert, so feeding buys ONLY animal product <
   $50 wheat + FEED labor. Direction dead, no retry.
+- SHED-DUP FIX ADOPTED STIG v9 (2026-09-26, SECOND PHASE-PLAN WINNER):
+  claimed = (x,y) in taken (dropped `not on_shed` for on-tile work rules
+  1/1b/2/3; shed_act never checked claimed so banking untouched). Mechanism:
+  the 4 shed tiles hold STRUCTURES (first builds land nearest (4,4)); the
+  exemption let all 13 units run rule 1 on the same shed-tile animal in one
+  step on stale shared obs -- repeat_probe 200001: 9 CAREs on (4,5)/day, all
+  engine no-ops. After: max_per_tile=1, ZERO repeat tiles (mechanism
+  verified on trace). Solo +7515/16 t=2.54 wins 13/16 (sd 11834); pins
+  92807->98024 / 97468->110668 / 104297->118618 (ALL THREE UP); audit
+  200001 weeds 33->27, water worst 52%->45%, dry-days drop d4-5; PASS
+  0.4%->1.3% (freed labor sometimes idles -- still net +7.5k). COST: d10
+  melon gate flips FAIL on seeds 0-1 (timing shift d10->d11, combined
+  d10+d11 cash HIGHER: seed0 2860->4885); one collapse seed 300013 (-24k:
+  freed labor over-plants 63 tiles, d15 dry 31/63 -> spiral -- replant
+  amplification tail, cf carrotmix lesson). New base ~= 109.1k pinned avg;
+  gap to 120k ~= 10.9k. Lesson: the engine no-op codes 11/12 were a
+  measurable labor pool (~5-12 acts/day); agent1's var_shed -17.6k (keep
+  building on shed tiles) is respected -- structures stay, dups go.
+- SHEEP-NEGLECT REJECTED (2026-09-26): no FEED/CARE/wool-HARVEST + no
+  replacements for SHEEP past d21 (keep COLLECT): solo -5636/16 t=-2.75 wins
+  4/16. Significantly negative -- the care/feed bonus system is load-bearing
+  (SPEC non-negotiable holds; agent2's 4-loss warning on animal-labor cuts
+  corroborated). Direction dead.
+- WATER-6.0 NULL (2026-09-26): routine WATER 5.0->6.0 (outrank CARE/COLLECT):
+  solo +156/16 t=0.04 wins 6/16, sd 17501 (swings +38k/-33k). Priority
+  shift re-times labor without creating any; destabilizes. Reject.
 - PACKAGE (latch + hires) PARKED SUB-BAR (2026-09-26): latch v1 + H(+4)
   while latched (hands are feed-free day-labor): solo +2143/16 t=1.10 wins
   8/16 (best sub-bar result ever; wins to +13.5k, losses to -11k). Loss

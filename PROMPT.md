@@ -1,12 +1,12 @@
-# TASK BRIEF — the 120k agent: `agent_current.py` (STIG v8, solo ~98k) -> solo average 120k, zero weeds, zero escapes, every step useful
+# TASK BRIEF — the 120k agent: `agent_current.py` (STIG v9, solo ~109k) -> solo average 120k, zero weeds, zero escapes, every step useful
 
 Work ONLY inside this folder (setup + every command: `RUN.md`). Push your work to a branch when done; the final agent must also be pasted COMPLETE (see delivery).
 
 ## THE FINAL GOAL — all four hold at once, or the job is not done
 
 1. **Solo average 120k.** `LINE_FORCE=pinned python3 harness.py agent_current.py parity`
-   (seeds 0,1,2 vs PASS dummy). Today: `[92807, 97468, 104297]`, average **~98.2k**.
-   Target: average **>= 120000**. That is +22k of REAL cash, measured, per seed
+   (seeds 0,1,2 vs PASS dummy). Today: `[98024, 110668, 118618]`, average **~109.1k**.
+   Target: average **>= 120000**. That is +11k of REAL cash, measured, per seed
    reported (never the average alone).
 2. **Zero weeds, zero escapes.** `LINE_FORCE=pinned python3 tools/coverage_audit.py
    agent_current.py 200001` (and 200002) must print **AUDIT: ALL PASS**, i.e.
@@ -145,7 +145,9 @@ gate; shed-ring reservation; distance-dominated scoring; VISIT-no-blindness +
 wheat-load trip; unplaced-triggered pickup with deliverer caps; urgency-first
 feeding; melon batch-6 + d10 liquidation + window-water 7.0; eve-water 8.0;
 d13+ straw-seed quota cut; d0 trickle caps; hire burst; feed_cap; `_fib` fix;
-TERMINAL CLOSURE (no planting past payoff horizon: W/C<=d27, T<=d21, S/M<=d19).
+TERMINAL CLOSURE (no planting past payoff horizon: W/C<=d27, T<=d21, S/M<=d19);
+SHED-DUP FIX (on-tile work honors taken even on shed tiles -- shed-tile
+structures keep working, same-step duplicate FEED/CARE/HARVEST no-ops gone).
 Rework one only with a trace proving it is done badly.
 
 DEAD THEORIES (reopening = instant REJECT): d0 wheat opening-quote rotation;

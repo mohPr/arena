@@ -902,7 +902,14 @@ class StigExec(Layer):
         # budgets). Without this the crew piles onto the top-value tile and
         # 11/12 actions no-op (d10: 14 units WATERed (8,2) 13x; d13: 50
         # HARVEST cmds on 5 melon tiles). Chains survive: taken resets steps.
-        claimed = (x, y) in taken and not on_shed
+        # STIG v9 shed-dup fix (adopted 2026-09-26: +7515/16 t=2.54 wins
+        # 13/16; repeat_probe shed-tile repeats 3-9 -> 0; audit weeds 33->27;
+        # pins +5217/+13200/+14321): on-tile work honors taken even on shed
+        # tiles. The 4 shed tiles hold STRUCTURES (first builds land on them);
+        # the old `not on_shed` exemption let all 13 units run rule 1 on the
+        # same shed-tile animal in one step (stale shared obs, all no-ops).
+        # shed_act (rule 4) never checked claimed: banking throughput untouched.
+        claimed = (x, y) in taken
         # 1) on-tile animal work
         if not claimed and isinstance(t, dict) and t.get('animal') is not None:
             if not t.get('fed_today') and int(inv.get('WHEAT', 0) or 0) > 0:
