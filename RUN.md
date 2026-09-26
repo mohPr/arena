@@ -37,7 +37,7 @@ Setup check — MUST reproduce these exact numbers before changing anything
 ```
 LINE_FORCE=pinned python3 harness.py agent_current.py parity
 ```
-Expected (pinned, mixed line — THE gate): rewards `[78160, 92317, 105673]`,
+Expected (pinned, mixed line — THE gate): rewards `[79451, 96896, 109958]`,
 gates d5-herd/d6-herd/d6-land PASS x3, d0-plants/d5-money/d10/d12/d15 FAIL
 (see STATE.md). Unpinned rewards vary with shop luck (shared-RNG
 contamination, STATE.md methodology note) — never gate on unpinned.

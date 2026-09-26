@@ -783,6 +783,22 @@ class StigExec(Layer):
         except Exception:
             return False
 
+    def prod_eve(self, ctx, t):
+        """True iff this tile has a strawberry production eve TODAY (end of
+        day ticks +1, +1 more iff watered today while fert active). Engine:
+        dsf = (day+1-planted-first) % iv == 0, production_count <= maxyield."""
+        try:
+            if t.get('crop') != 'STRAWBERRY':
+                return False
+            cd = CROPS.get('STRAWBERRY')
+            day = ctx.day
+            planted = int(t.get('planted_day', 0) or 0)
+            first, iv, mx = cd['first'], max(1, cd['interval']), cd['maxyield']
+            dsf = (day + 1) - planted - first
+            return dsf >= 0 and dsf % iv == 0 and dsf // iv + 1 <= mx
+        except Exception:
+            return False
+
     def plant_need(self, ctx, x, y, t):
         """(value, kind) for a plant tile, 0 if nothing to do."""
         r, yld = self.ripe(ctx, t)
@@ -790,7 +806,15 @@ class StigExec(Layer):
             return 8.0, 'HARVEST'
         if not t.get('watered_today'):
             cu = int(t.get('consecutive_unwatered', 0) or 0)
-            return (10.0 if cu >= 1 else 5.0), 'WATER'
+            if cu >= 1:
+                return 10.0, 'WATER'
+            # Eve pass: today's strawberry production eves outrank routine
+            # field work (ties ripe HARVEST 8.0, below hungry FEED 10.0).
+            # The bonus needs water AND fert-active on the eve; fert_pays
+            # already aims fert at windows, this aims the water.
+            if self.prod_eve(ctx, t):
+                return 8.0, 'WATER'
+            return 5.0, 'WATER'
         return 0.0, None
 
     def struct_need(self, ctx, x, y, t, inv):
