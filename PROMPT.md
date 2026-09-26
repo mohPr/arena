@@ -1,90 +1,118 @@
-# TASK BRIEF — finish the DSM champion: `agent_current.py` (STIG v1, ~90k, margin −117k) -> ~107k and positive, then BEYOND
+# TASK BRIEF — the 120k agent: `agent_current.py` (STIG v7, solo ~96k) -> solo average 120k, zero weeds, zero escapes, every step useful
 
-Repo: https://github.com/mohPr/arena.git — `git clone` it, work ONLY inside it. Push is already done, just clone.
+Repo: https://github.com/mohPr/arena.git — `git clone` it, work ONLY inside it. Everything you need is already in this folder (setup + commands: `RUN.md`). Push your work to a branch when done; the final agent must also be pasted COMPLETE (see delivery).
 
-## STEP 0 — reproduce before you think
+## THE FINAL GOAL — all four hold at once, or the job is not done
+
+1. **Solo average 120k.** `LINE_FORCE=pinned python3 harness.py agent_current.py parity`
+   (seeds 0,1,2 vs PASS dummy). Today: `[89412, 92105, 105625]`, average **95.7k**.
+   Target: average **>= 120000**. That is +24k of REAL cash, measured, per seed
+   reported (never the average alone).
+2. **Zero weeds, zero escapes.** `LINE_FORCE=pinned python3 tools/coverage_audit.py
+   agent_current.py 200001` (and 200002) must print **AUDIT: ALL PASS**, i.e.
+   max standing weeds 0 every day, herd never shrinks, every animal fed at end
+   of every day (yes, including d28-29 — the base deliberately starves the
+   terminal days; decide consciously and defend it or fix it).
+3. **Every worker step useful.** Same audit: walk share (base: **51.2%** of all
+   steps) must come DOWN, PASS stays ~0, and the freed steps must show up as
+   watered tiles and fed animals — not as idling. Every plant watered every day
+   it pays (audit: days with >5% of production tiles dry must be none).
+4. **Head-to-head must rise too.** 6-seed pinned screen vs `opp_pipe19.py`
+   (seeds 200001-200006, `ab_pin_opp.py`): base totals 322459 (you) vs 863411
+   (opp). Your total must go UP without the opponent's collapsing from lottery
+   (report both sides per seed). Winner confirms vs all three opponents.
+
+HOW you get there is entirely yours. We will not prescribe fixes. Think in
+mechanisms (water coverage -> banked yield -> cash timing -> reinvestment ->
+more coverage), find them with traces, prove them with the audit + meters +
+screens. Swing big: the shop lottery is ±35k/game (see `STATE.md`), so only
+real effects survive — this is a filter, not an excuse. A round that rules
+something out with a trace is a good round. A round of predictions is wasted.
+
+## WHERE YOU START (measured today — reproduce before you think)
+
 1. `pip install kaggle-environments==1.32.7`, `cd` into the repo.
-2. Run `python3 harness.py agent_current.py parity` and confirm rewards
-   EXACTLY `[88793, 90031, 90503]`. If off by even 1, your setup is wrong — fix it first.
-3. Run `python3 tools/prod_meters.py agent_current.py 0 0` and confirm the shape:
-   d11-15 acts ~150-165/d, mv/act ~0.5-0.9, FEED ~17-24/d. This is the production
-   shape — your variants must keep it.
-4. Read in this order: `RUN.md`, `STATE.md`, `STIG_DESIGN.md`, `DSM_OS_SPEC.md`,
-   then `SPEC.md`, `FINDINGS.md`, then `agent_current.py`, then `agent_prev_role.py`
-   (the old 62k role-based base, A/B reference only).
+2. `LINE_FORCE=pinned python3 harness.py agent_current.py parity` MUST print
+   rewards EXACTLY `[89412, 92105, 105625]`. Off by even 1: setup is wrong,
+   fix it first, touch nothing.
+3. `LINE_FORCE=pinned python3 tools/coverage_audit.py agent_current.py 200001`
+   MUST fail exactly like this (your starting task list — every FAIL is a work
+   order): `WEEDS: FAIL (worst=30)`, `ESCAPES: FAIL (worst=1)`,
+   `FEED: FAIL (worst=21, d28)`, `WATER: FAIL (23 of 29 days >5% dry)`,
+   `walk=51.2%, PASS=0.4%`. If your run disagrees, your setup is wrong.
+4. `LINE_FORCE=pinned python3 tools/prod_meters.py agent_current.py 0 0` —
+   shape to keep: d10-15 acts ~177-216/d, mv/act ~0.3-0.8, FEED ~13-23/d.
 
-## THE SCOREBOARD (measured, 2026-09-25 — moving them is your job; HOW is entirely up to you)
-- Production vs PASS dummy: `[88793, 90031, 90503]`. Gates: d5-herd, d6-land,
-  d10 PASS x3; FAIL: d6-herd (5-6 vs 7), d5/d12/d15 money (curve arrives late,
-  grinds d20+ instead of spiking d10-15); d0-plants 14 vs 15 is a STALE gate,
-  ignore it (`STATE.md` explains why).
-- Competitive, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1: vs pipe19
-  62444 vs 179413 (margin −116969); vs pipe18 and vs v57: same lines (all three
-  opps saturate ~179.4k on this seed — margin moves ONLY through YOUR score,
-  the opponent is fixed). Old role base same setup: 27385 vs 147891 (margin −120506).
-- DSM reference (`SPEC.md` + `DSM_OS_SPEC.md`): d0 2C+3S + melon wall; d5 money
-  634-901; d6 land + wave 7-12 head; d10-15 melon spike ($3k->$26k); d15 herd 20-30;
-  ~95 sold/day; ~20 feeds/day; acts ~150/d at mv/act 0.74-0.79.
-- Open stages, by cash size (data, not instructions — attack where YOUR traces point,
-  in whatever order you choose, and finish ALL of them): (1) d6 wave cash — herd 5-6
-  vs 7-12, d1-2 feed hole (FEED 0-1, escapes d2-3) cascades into no-milk d2/d4 and a
-  late wave; (2) curve timing — melon yields stall 3-5 vs 6 (water/fert coverage d8-12
-  on the wall), money grinds d20+; (3) d1 wandering — sparse-work diffusion (mv/act 2-4),
-  DSM idles instead of trekking; (4) terminal weeds (~46 by d27-29 on some seeds);
-  (5) THEN margin screens on all three opponents and optimization BEYOND DSM (~107k
-  is the target to beat, not the ceiling).
+## FILE GUIDE — read only what earns its time
 
-## ALREADY LANDED (in the base — resubmitting any of these is instant REJECT)
-One actor per tile per step; soft hunger gate (wheat full-cap + seeds trickle-1);
-shed-ring reservation; distance-dominated scoring (value − 2*dist, persist 1.5,
-radius 3); VISIT-no-blindness + wheat-load trip; unplaced-triggered animal pickup
-with deliverer caps (d0: 2, later: 5); urgency-first feeding; melon sale batch 6;
-d2/d3 melon catch-up; d0 trickle caps; hire burst; feed_cap; `_fib` fix. If you
-believe one is done badly, prove it with a trace first — a variant that re-lands
-them without proof is rejected unread.
+READ, in this order:
+- `RUN.md` — every command you need (setup, parity, meters, audit, screens).
+- `STATE.md` — current truth: landed mechanisms, dead variants, gates, the
+  lottery methodology. BINDING. When it conflicts with any other doc, it wins.
+- `agent_current.py` — the base you improve (1216 lines, self-contained).
+- `tools/coverage_audit.py` — your finish-line test. Read it, then beat it.
+- `STIG_DESIGN.md` — how the worker system is built (one actor per tile,
+  need-2*dist scoring, shed logistics).
+- `DSM_OS_SPEC.md` — what the 104k champion replay does (melon wall, d10
+  spike, 32-strawberry wall, zero weeds, d29 liquidation).
+- Instruments (usage only, not internals): `harness.py`, `ab_pin.py`,
+  `ab_pin_opp.py`, `census_state.py`, `tools/prod_meters.py`.
 
-## DEAD THEORIES (tested negative — reopening is instant REJECT)
-d0 wheat opening-quote rotation; index-jitter symmetry break; hard hunger seed-skip;
-zero-move FEED/CARE port; melon-wall fert at d4; stale shared claims; wallet-gated
-shopping; chain-planting; hire gates; carry-12; ripe-only wheat reserve;
-ENROUTE_MAX 3->6; holding produce for price; land before income; goose-heavy at
-capped delivery; tomato walls >12; var_fertcol/var_fertval/var_enroute/var_shed.
+DO NOT READ (stale — opening them wastes your round):
+- `agent_base.py`, `var_sched5.py`, `var_sched6.py` — dead lineage.
+- `agent_prev_role.py` — old 62k role base, superseded.
+- `opp_pipe18.py`, `opp_v57.py`, `opp_kagg.py` — screen against them, never
+  read them (same core as pipe19; behavior is measured, not read).
+- `SPEC.md`, `FINDINGS.md` — old rate tables, superseded by `STATE.md`.
+- `fast_kaggr_env.py` — engine driver. Do NOT modify (parity-gated).
 
-## YOUR JOB — finish all five stages, then beat DSM, not join it
-We will not tell you what to try. The scoreboard, the landed list and the dead list
-are everything we know — new cash must come from a mechanism YOU discover through
-traces, census lines and `tools/prod_meters.py`, not from reshuffling landed fixes
-or shapes with no meter reading. Production meters BEFORE money, every variant: if
-`tools/prod_meters.py` shape breaks (acts/day, mv/act, FEED/day, gap-hist), money
-will follow — check it first.
+ALREADY LANDED (in the base — resubmitting any of these is instant REJECT):
+one actor per tile; soft hunger gate; shed-ring reservation; distance-dominated
+scoring; VISIT-no-blindness + wheat-load trip; unplaced-triggered pickup with
+deliverer caps; urgency-first feeding; melon batch-6 + d10 liquidation +
+window-water 7.0; eve-water 8.0; d13+ straw-seed quota cut; d0 trickle caps;
+hire burst; feed_cap; `_fib` fix. Rework one only with a trace proving it is
+done badly — otherwise rejected unread.
 
-## RESULT BAR (no exceptions, no partial credit)
-- ADOPT requires ALL of: (1) a mechanism trace showing the block BEFORE the fix;
-  (2) production meters kept-or-better PLUS a 3-seed pinned screen
-  (`LINE_FORCE=pinned ab_pin.py` vs opp_pipe19, seeds 200001-200003) beating the base
-  TOTAL by >=5000 with no seed worse than −2000; (3) a falsifier (`census_state.py`
-  line that would prove you wrong) that did NOT print; (4) a stated COST (what got
-  worse, measured).
-- CONFIRM (winner only): 5 seeds (200001-200005) vs ALL THREE opponents
-  (`opp_pipe19.py`, `opp_pipe18.py`, `opp_v57.py`) with `ab_pin_opp.py` — all 30 lines
-  (your score + opp score per seed per opp) in the report. A result is REAL only if
-  measured against all three. Anything unrun = PREDICTION + falsifier + risk, and
-  predictions NEVER earn ADOPT.
-- If nothing clears the bar, return REJECT ALL plus the single most informative
-  failed trace and what it rules out. A round that rules something out is a good round.
-  A round of predictions is a wasted round.
-- Max 3 variants per round, ONE variable each, always `diff -u agent_current.py`.
-  `STATE.md` constraints are binding. Every score per seed — never the average alone.
-  NEVER present unrun numbers as measured.
+DEAD THEORIES (tested negative — reopening is instant REJECT): d0 wheat
+opening-quote rotation; index-jitter symmetry break; hard hunger seed-skip;
+zero-move FEED/CARE port; melon-wall fert at d4; stale shared claims;
+wallet-gated shopping; chain-planting; hire gates; carry-12 (kanban: small
+loads are a pull system, big loads overstock the 100-cap shed); ripe-only
+wheat reserve; ENROUTE_MAX 3->6; holding produce for price; land before
+income; goose-heavy at capped delivery; tomato walls >12; purity S32/W24;
+d0-melon-first herd deferral; nogeese; wheat bank-load exclusion;
+wheat-churn reserve rewrite; d1 PASS-if-idle; var_fertcol/var_fertval/
+var_enroute/var_shed. (`STATE.md` has the evidence for each.)
 
-## FINAL DELIVERY (after the winner confirms on all three opponents)
-1. What you did, stage by stage (1-5 + beyond-DSM): mechanism + trace evidence +
-   screen lines for each.
-2. What you found: the 3 most important facts about this game nobody had written
-   down, with file:line or replay proof each.
-3. The final agent: COMPLETE file content, and if you present it as a website, that
-   page MUST have one copy button that copies the ENTIRE agent code in one click —
-   no split blocks, no "part 1/3", one button, one paste, ready to save as
-   `agent_current.py` and run.
-4. Final verdict last: ranked variants + which ONE to adopt (or REJECT ALL) + the
-   single fact you would check next. Short answers, simple words.
+## WORK RULES
+
+- Audit FIRST, before changing code: `coverage_audit.py` failures ARE the task
+  list (30 weeds, dry tiles 23/29 days, 51% walking, d28 starvation). Every
+  variant must move at least one audit line toward PASS without regressing
+  the others — attach before/after audit tails to every variant report.
+- Meters BEFORE money, every variant (`tools/prod_meters.py`): if acts/day,
+  mv/act, FEED/day break, money will follow — check shape first.
+- ONE variable per variant, always `diff -u agent_current.py my_variant.py`.
+  Max 3 variants per round. Every score per seed, never the average alone.
+- Adopt bar per variant: mechanism trace showing the block BEFORE the fix +
+  audit progress + 6-seed h2h total up + parity not down + a falsifier line
+  that did NOT print + a stated COST (what got worse, measured).
+- NEVER present unrun numbers as measured. Anything unrun = PREDICTION +
+  falsifier + risk. Predictions never earn ADOPT.
+- If nothing clears the bar: REJECT ALL + the single most informative failed
+  trace and what it rules out.
+
+## FINAL DELIVERY
+
+1. Stage by stage: mechanism + trace/audit evidence + screen lines for each win.
+2. The 3 most important facts about this game nobody had written down, each
+   with file:line or replay proof.
+3. The final agent: COMPLETE file content, and if you present it as a website,
+   that page MUST have ONE copy button that copies the ENTIRE agent code in
+   one click — no split blocks, no "part 1/3", one button, one paste, ready to
+   save as `agent_current.py` and run.
+4. machine info for our planning: CPU core count (`nproc`), RAM (`free -g`),
+   and YOUR measured minutes-per-game on that machine.
+5. Final verdict LAST: ranked variants + which ONE to adopt (or REJECT ALL) +
+   the single fact you would check next. Short answers, simple words.

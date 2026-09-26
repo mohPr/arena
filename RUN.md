@@ -29,7 +29,14 @@ python3 -c "import fast_kaggr_env as f; print(f.FastKaggrEnvPy)"
   `STIG_DESIGN.md` (this base's design) `STATE.md` — read in that order; STATE.md wins.
 - `tools/` — `prod_meters.py` (acts/mv/act/gaps/feeds per day), `tour_mine.py` +
   `chain_mine.py` (replay mining: per-unit tours, chains, bigrams; point at any
-  kaggle agriculture replay JSON).
+  kaggle agriculture replay JSON), `coverage_audit.py` (worker-system audit:
+  weeds/escapes/unfed/watered-fractions per day + PASS/walk share, exit 0 = ALL
+  PASS — the finish-line test, run it before AND after every variant).
+- DO NOT READ (stale, waste of your time): `agent_base.py`, `var_sched5.py`,
+  `var_sched6.py` (dead lineage), `agent_prev_role.py` (old 62k role base,
+  superseded), `opp_pipe18.py`, `opp_v57.py`, `opp_kagg.py` (screen against
+  them, never read them), `SPEC.md`, `FINDINGS.md` (old tables, superseded by
+  `STATE.md`), `fast_kaggr_env.py` (engine driver — do NOT modify).
 
 ## 2. Commands (run from this folder)
 Setup check — MUST reproduce these exact numbers before changing anything
