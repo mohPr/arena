@@ -31,7 +31,13 @@ python3 -c "import fast_kaggr_env as f; print(f.FastKaggrEnvPy)"
   `chain_mine.py` (replay mining: per-unit tours, chains, bigrams; point at any
   kaggle agriculture replay JSON), `coverage_audit.py` (worker-system audit:
   weeds/escapes/unfed/watered-fractions per day + PASS/walk share, exit 0 = ALL
-  PASS — the finish-line test, run it before AND after every variant).
+  PASS — the finish-line test, run it before AND after every variant),
+  `motion_trace.py` (observation-only movement trace: duplicate same-step walk
+  intents, immediate reversals, NEW weed transitions split plant-origin vs
+  empty-origin — run before ANY walk claim),
+  `pscreen.py` (parallel paired 16-seed solo A/B screen with t-stat — the
+  adoption screen), `hscreen.py` (parallel paired 16-seed h2h A/B vs an
+  opponent, margin-delta t-stat).
 - DO NOT READ (stale, waste of your time): `agent_base.py`, `var_sched5.py`,
   `var_sched6.py` (dead lineage), `agent_prev_role.py` (old 62k role base,
   superseded), `opp_pipe18.py`, `opp_v57.py`, `opp_kagg.py` (screen against
@@ -59,12 +65,20 @@ Expected shape: d1 acts ~39 FEED 4 (shuttle tax mv ~4.7, one day only);
 d10-15 acts ~177-216/d, mv/act ~0.3-0.8, FEED ~13-23/d, gap-0 ~67%.
 If your variant breaks this shape, money will follow.
 
-Screen a variant (3 seeds, PINNED, vs pipe19, ~6 min):
+Screen a variant, the adoption standard (16 fresh seeds, PINNED, ~2-4 min):
+```
+LINE_FORCE=pinned python3 tools/pscreen.py agent_current.py my_variant.py 16 300001
+```
+Prints per-seed A/B + mean/sd/t-stat/wins. Bar: |t|>=2 with majority wins.
+Fresh seeds 300001+ only — seeds 0-2 are cherry range, never adopt off them.
+H2h check for the winner (16 fresh seeds, ~4 min):
+```
+LINE_FORCE=pinned python3 hscreen.py agent_current.py my_variant.py opp_pipe19.py 16 300001
+```
+Legacy 6-seed screens (cherry range, ±8k noise — informative only, never adopt):
 ```
 LINE_FORCE=pinned python3 ab_pin.py pinned agent_current.py my_variant.py 200001 200002 200003
 ```
-Report all 6 lines (A x3 + B x3), never the average alone. Adopt bar: base
-TOTAL +>=5000 with no seed worse than −2000 (<5k totals are RNG noise).
 
 Confirm the winner vs all three strong opponents (200001-200005, ~30 min):
 ```
@@ -85,8 +99,15 @@ Mechanism check (1 game, ~2 min):
 python3 census_state.py 200001 my_variant.py
 ```
 
-Timing: ~1-3 min/game (pure Python). Budget: screen on 200001-200003 ONLY;
-5-seed confirm (200001-200005) for the winner only. Max 3 variants per round.
+Timing: full solo games take seconds (fast env), full h2h ~4s; a 16-seed
+screen costs ~2-4 min on 8 cores. Machine: nproc=8, RAM 13G. Budget: decide
+everything on 16-seed fresh screens; parity 0,1,2 stays the 120k gate.
+Max 3 variants per round.
+
+Movement trace (observation-only, ~1 min — BEFORE any walk claim):
+```
+PYTHONPATH=. LINE_FORCE=pinned python3 tools/motion_trace.py agent_current.py 200001
+```
 
 ## 3. Rules for variants
 - ONE variable per variant, always diffed against `agent_current.py`

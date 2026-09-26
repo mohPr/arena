@@ -29,6 +29,44 @@ screens. Swing big: the shop lottery is ±35k/game (see `STATE.md`), so only
 real effects survive — this is a filter, not an excuse. A round that rules
 something out with a trace is a good round. A round of predictions is wasted.
 
+## YOUR ASSIGNMENT — four problems, solve at least one (all four = best result ever)
+
+Work these four in order. For EACH problem you must try at least 20 different
+ideas (mechanisms, not number-tweaks — a different threshold on the same knob
+is one idea, not five). Solving one problem completely beats touching all four
+shallowly. Try hard: this is complex, no single change delivers 120k; money
+comes from combinations of changes that work together. But combinations are
+tested like singles: keep the parent, add ONE mechanism, compare the combo
+against the parent AND against each part alone.
+
+- **Problem 1 — WATER.** Ongoing crops tick yield nightly for free; engine-verified
+  watering them banks $0 (see `STATE.md` engine notes). But every cut tested so far
+  died in a spawn spiral (skipped tiles open holes, empty tiles spawn weeds by RNG,
+  DIG labor can't keep up: -10k to -14k, t up to -5). Goal: full coverage at lower
+  cost, or coverage that cannot spiral. Read the dead list first — do not resubmit it.
+- **Problem 2 — WALKS.** Audit says 51.2% of steps are moves. Every move class measured
+  so far is transactional (mid/late supply shuttles, d0-d1 delivery runs, purposeful
+  drift). Coordinator's starting target: ~40% walks, every action useful. Kills so far:
+  bank-trip gating, drift-to-PASS, purpose-gated drift, destination reservation (that one
+  even cut walks 6pp and STILL lost money — redundancy lesson in `STATE.md`). Find
+  walks that are truly empty, or make each trip carry more without breaking the shed cap.
+- **Problem 3 — EARLY-CASH.** d0 budget is zero-sum ($3000 fixed); d1 edges (~$500 fert
+  cash) drown in shop lottery (±15k). The +8k d1-melon variant was cherry luck (-13.5k
+  on fresh seeds). Real early cash must exceed ~10k to be measurable, or compound: the
+  d10 spike ($3k -> $26k in DSM) is where early advantages multiply. Spike audit in
+  `STATE.md` shows cash locked in seed piles while the wallet starves — but cutting the
+  piles starved the planters worse. Solve the spike, not d1.
+- **Problem 4 — DECAY.** 8-22 ripe one-shots stand unharvested every dawn (policy waits
+  for full yield; engine banks stop at maxday). Harvest-first died by priority crowding
+  (-12.5k, all parity gates FAIL): 8.0-priority slots are the scarcest resource. Kill
+  decay without spending 8.0 slots, or prove which half of weed births is cheapest to
+  prevent (`tools/motion_trace.py` splits plant-origin vs empty-origin transitions).
+
+CROSS-CUTTING LAW (5 deaths and counting): every removed buffer has died — daily water,
+drift visits, convergent walks, seed piles. DSM wins buffer-RICH ($13k piles, 75 stands,
+water-everything). Do not strip buffers. Feed the flywheel instead: stands -> volume ->
+cash -> stands. We sit just below its threshold (~96k vs DSM ~105k solo).
+
 ## WHERE YOU START (measured today — reproduce before you think)
 
 1. `pip install kaggle-environments==1.32.7`, `cd` into the repo.
@@ -42,6 +80,10 @@ something out with a trace is a good round. A round of predictions is wasted.
    `walk=51.2%, PASS=0.4%`. If your run disagrees, your setup is wrong.
 4. `LINE_FORCE=pinned python3 tools/prod_meters.py agent_current.py 0 0` —
    shape to keep: d10-15 acts ~177-216/d, mv/act ~0.3-0.8, FEED ~13-23/d.
+5. `PYTHONPATH=. LINE_FORCE=pinned python3 tools/motion_trace.py agent_current.py 200001`
+   — the movement trace: duplicate same-step walk intents (base: 1343/3722 = 36%),
+   immediate reversals (127), NEW weed transitions split plant-origin (77) vs
+   empty-origin (22). Observation-only; run it before claiming any walk is waste.
 
 ## FILE GUIDE — read only what earns its time
 
@@ -54,9 +96,12 @@ READ, in this order:
 - `STIG_DESIGN.md` — how the worker system is built (one actor per tile,
   need-2*dist scoring, shed logistics).
 - `DSM_OS_SPEC.md` — what the 104k champion replay does (melon wall, d10
-  spike, 32-strawberry wall, zero weeds, d29 liquidation).
+  spike, 32-strawberry wall, zero weeds, d29 liquidation). DSM is the best agent
+  alive right now and it is carefully designed — nothing in it is random. Copy it
+  FIRST; every deviation needs a trace proving the base does it badly.
 - Instruments (usage only, not internals): `harness.py`, `ab_pin.py`,
-  `ab_pin_opp.py`, `census_state.py`, `tools/prod_meters.py`.
+  `ab_pin_opp.py`, `census_state.py`, `tools/prod_meters.py`,
+  `tools/motion_trace.py`, `tools/pscreen.py`, `tools/hscreen.py`.
 
 DO NOT READ (stale — opening them wastes your round):
 - `agent_base.py`, `var_sched5.py`, `var_sched6.py` — dead lineage.
@@ -83,7 +128,14 @@ wheat reserve; ENROUTE_MAX 3->6; holding produce for price; land before
 income; goose-heavy at capped delivery; tomato walls >12; purity S32/W24;
 d0-melon-first herd deferral; nogeese; wheat bank-load exclusion;
 wheat-churn reserve rewrite; d1 PASS-if-idle; var_fertcol/var_fertval/
-var_enroute/var_shed. (`STATE.md` has the evidence for each.)
+var_enroute/var_shed; var_shed2 (dawn-stock reserve); var_fertup (d0-d1 fert
+collection push: +8k cherry, -13.5k fresh); var_bank8 (bank-trip wheat
+exclusion); var_stay / var_weedstay (drift-to-PASS + weed priority);
+var_weed-pierce (no-op); var_h2o / var_h2o2 / var_combo1 (S/T water cuts:
+spawn spiral); var_drift2 (purpose-gated drift: gate never binds);
+var_decay (harvest-first: priority crowding); var_reserve (destination
+reservation: kills redundancy, doubles variance); var_seedcap (halved seed
+caps: starves wall through broke days). (`STATE.md` has the evidence.)
 
 ## WORK RULES
 
@@ -93,11 +145,22 @@ var_enroute/var_shed. (`STATE.md` has the evidence for each.)
   the others — attach before/after audit tails to every variant report.
 - Meters BEFORE money, every variant (`tools/prod_meters.py`): if acts/day,
   mv/act, FEED/day break, money will follow — check shape first.
+- Motion trace BEFORE any walk claim (`tools/motion_trace.py`): duplicates,
+  reversals, and weed-birth splits decide whether a walk is waste. Coordinate
+  waste is guilty only if the trace convicts it.
 - ONE variable per variant, always `diff -u agent_current.py my_variant.py`.
   Max 3 variants per round. Every score per seed, never the average alone.
+- Decisions by 16-seed screens on FRESH seeds (300001+, never the 0-2 cherry
+  range for adoption): `tools/pscreen.py` solo (bar: |t|>=2 with majority of
+  wins) and `tools/hscreen.py` h2h margin-delta vs `opp_pipe19.py`. Full games
+  take seconds — a 16-seed screen costs minutes, so there is no excuse for
+  cherry seeds. Cherry luck has killed four "promising" variants already.
 - Adopt bar per variant: mechanism trace showing the block BEFORE the fix +
-  audit progress + 6-seed h2h total up + parity not down + a falsifier line
-  that did NOT print + a stated COST (what got worse, measured).
+  audit progress + 16-seed screen clearing the bar + parity not down +
+  a falsifier line that did NOT print + a stated COST (what got worse, measured).
+- Combinations: keep the parent, add ONE mechanism, beat the parent AND each
+  part alone. A negative single change may still interact — but the combo must
+  clear the same bar, no discounts.
 - NEVER present unrun numbers as measured. Anything unrun = PREDICTION +
   falsifier + risk. Predictions never earn ADOPT.
 - If nothing clears the bar: REJECT ALL + the single most informative failed
@@ -114,5 +177,7 @@ var_enroute/var_shed. (`STATE.md` has the evidence for each.)
    save as `agent_current.py` and run.
 4. machine info for our planning: CPU core count (`nproc`), RAM (`free -g`),
    and YOUR measured minutes-per-game on that machine.
-5. Final verdict LAST: ranked variants + which ONE to adopt (or REJECT ALL) +
+5. Full games PLAYED per variant (solo + screens), not just written: test the
+   agent in games before you present it. An unplayed variant is a prediction.
+6. Final verdict LAST: ranked variants + which ONE to adopt (or REJECT ALL) +
    the single fact you would check next. Short answers, simple words.
