@@ -60,17 +60,22 @@ Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`
 ## Open stages (the work — all of it is yours)
 1. d6 wave cash: DONE for herd (d6 herd>=7 passes pinned 3/3, unpinned 2/3).
    OPEN for money: d5 ~$200-500 vs $750; d10/d12/d15 bands.
-2. Curve timing: MELON SPIKE PART-DONE. Mined DSM recipe: 10 melons (6 d0+4 d1),
-   water EVERY melon EVERY day once age>=7 (yield window 6-12, +1/day, cap 6),
-   NEVER fert melon, harvest each at 6 (d0-cohort d10, d1-cohort d11-12), sell
-   same day (36/18/6). Our gaps: (a) FIXED v3 — harvest age-gate;
-   (b) PARKED — d9/d11 water priority: mechanism fires but ~+$500 effect is
-   unmeasurable through the ±15k shop lottery (see rejected + methodology);
-   (c) OPEN — wall completes d3-4 not d1 (d1 plants no melon);
-   (d) REFRAMED — the d15 gap ($6k vs $20k) is NOT melon, it's SCALE: DSM d15
-   sells EGG 18 + CARROT 11 + STRAW 8 + WOOL/MILK/WHEAT/FERT at ~21+ head.
-   Next dig: DSM d12-15 money composition (herd size/mix, strawberry count,
-   carrot program) vs ours, then swing at the biggest scale delta.
+2. Curve timing: MELON SPIKE PART-DONE (v3 age-gate). DSM recipe mined (10
+   melons, daily window water, no fert, harvest@6, same-day sale).
+   SCALE GAP REFRAMED 2026-09-26: DSM d15 = 75 stands (S30/W21-29/C8-17/T5-7)
+   + 20 head, sells EGG 18 + CARROT 11 + STRAW 8 + WOOL/MILK/WHEAT/FERT, buys
+   SEEDS ONLY (zero BUY_PRODUCT all game). Ours d15 = 42-50 stands, herd
+   13-21, buys WHEAT 40-60/day while selling 44-55 (bid/ask churn ~-$500/day)
+   + FERT 16 quota buys. d11+ wheat unslash FAILED (-10.4k): stands without
+   water labor = weeds. Buy-side gate FAILED (-4.3k clean-ticket): churn is
+   cu=0 insurance premium; killing it throttles growth via chronic cu=1.
+   NEXT HYPOTHESIS (field passivity, untested): our crew never SEEKS field
+   work — WATER 5.0 / PLANT 6.0 lose to FEED 7-10 / HARVEST 8 globally, so the
+   field gets only on-tile opportunism (WATER 32 vs DSM 66, HARVEST 2 vs 27,
+   PLANT ~10 vs 13-17, PICKUP 37 vs 6). Sparse field -> travel tax -> sparse
+   field (DSM density 75 works on the same 12-unit crew). Test labor-unlock
+   (seek-water/plant values) on MECHANISM first (WATER/day, HARVEST/day,
+   stands, weeds), then screens. d1-wall-completion (c) still open after.
 3. d1 wandering: PART-DONE (d1 FEED 4, acts 39; mv/act still 4.67 — DSM idles
    (PASS) instead of trekking; ours treks, one day only).
 4. Terminal weeds (~46 by d27-29 on some seeds): late water coverage under max scale.
@@ -106,6 +111,22 @@ Pinch, seed 200001, `LINE_FORCE=pinned`, opp seat 0 / us seat 1 (`ab_pin_opp.py`
   batch 6; d2/d3 melon catch-up; d0 trickle caps; hire burst; feed_cap; `_fib` fix.
 
 ## Rejected (never re-propose, all A/B'd negative or byte-identical)
+- d11+ wheat targets 12->24 (unslash): -10370 total (+929/-1722/-9577).
+  Stands rose (11->19 by d15) but buys never fell (hair-trigger still fires
+  on micro-zeros) while the fixed water budget spread thinner. Lesson: stands
+  without water labor = weeds + turnover cost. See field-passivity note.
+- Late wheat emergency gate (pockets must cover unfed, d11+): -4271 total
+  (-5687/+10650/-9234) WITH the early ticket held identical (stream-diff: 0
+  diffs in d0-10). Kills the churn AND the insurance: delayed buys leave the
+  herd chronically cu=1 (no escapes, but growth freezes via feed_cap=
+  owned_now, seeds cap via hunger gate, FEED 10.0 distorts labor). Churn is
+  feed-insurance premium for cu=0; the fix is field-side (shed never hits 0),
+  never buy-side. Early-gated form also REJECTED (inverted gate removed d0-10
+  buys by accident, then correctly-split form is this one).
+- Ungated pocket gate (all days): +14438 total but -8579 worst seed — the
+  d5 $300 save re-dealt the shop lottery (BAKERY vs YARNx2). Correct
+  mechanism, unmeasurable form. Superseded by the d11+ form above (also
+  rejected — the gate itself is wrong, see previous).
 - Yield-window melon WATER 8.5 (two forms): ungated -12577 (-16096/+1381/
   +2138); age>=8-gated -22430 (-20045/+3595/-5979). Mechanism FIRES
   (d9 coverage 3/11->10/11, wall yields on schedule) but the effect (~+$500
