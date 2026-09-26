@@ -366,3 +366,15 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
   agent may be buffer-stripped; DSM carries big buffers ($13k piles, 75
   stands, water-everything) and out-earns via SCALE. Remaining gap is a
   stands->volume->cash flywheel threshold, not average efficiency.
+- var_stagger REJECTED SIGNIFICANT (S/T plant cap 4/d from d9, eve-spreading):
+  solo -6.1k/16 t=-2.75 wins 4/16. LESSON: wall speed >> peak smoothing;
+  income-days (stands x days) dominate smoothing gains. Peak-overload theory
+  predicted the wrong sign — delaying the wall costs more than peaks do.
+- var_carrotmix NULL (carrot quotas+targets halved 0.5): solo -2.1k/16 t=-0.90
+  wins 8/16. No gradient: freed labor replants other crops 1:1, carrot income
+  ≈ replacement. Mix direction dead (zero-carrot unlikely to differ).
+- var_shuttle REJECTED CATASTROPHIC (carry-8 + bank-excludes-wheat): solo
+  -44.6k/16 t=-12.2 wins 0/16. Mechanism: pocket wheat blinds shed-stock
+  signals (feed_cap/pipeline/hunger-gate read shedW=0 -> emergency buys +
+  seed block + wave death). Retro-explains big-carry-12. LESSON: shed stock
+  is the market's sensor; carrying supply in pockets blinds it. Walk queue EMPTY.
