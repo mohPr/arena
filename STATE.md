@@ -77,9 +77,15 @@ rewards **79451 / 96896 / 109958** (total 286805, v4 was 276150 = +10655):
    strawberry eve-water 59->81%, 200003 repaired. REMAINING: d5 money
    (~$200-500 vs $750), d10/d12/d15 money bands (curve still shifted late:
    money grinds d16+, no d10-15 spike yet).
-3. d1 wandering: PART-DONE (FEED 4). Outside agent measured, unfixed:
-   prediction is a PASS-if-idle rule (no work in radius + pocket empty);
-   falsifier: d02 money < $301 on 200001.
+3. d1 wandering: CLOSED as ~$0 lever (PASS-if-idle rule FALSIFIED, do not
+   resubmit). Falsifier read confirmed: base d02 money = $301 exactly (vs
+   pipe19, seat 1, 200001, pinned); idle variant = $202. REJECTED at mechanism
+   level (d1 PASS 0->1, moves -1). Autopsy (`/tmp/opencode/dbg_idle.py`): d1
+   walks are to-work 166 + wheat-load 69 + bank 2 — legitimate dispersed travel
+   (15-plant field + herd errands), NOT idle drift; and the shed-drift is
+   LOAD-BEARING positioning (idlers scattered, paid +$99 travel later). d1
+   mv/act 4.67 is a crew-size artifact (9 units vs DSM 5) + cosmetic: extra
+   hands cost no wages, only ~$54 fib. No dollar lever here; mv/act ignored.
 4. Terminal weeds: v4 freed water labor (WATER d13 51 vs 40 on their trace);
    mid-game deaths fall; terminal (d29 ~32-42) remains. Ruled out: urgency
    escalation. Candidates: eve program sizing (above), late water coverage.
