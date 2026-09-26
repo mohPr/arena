@@ -734,6 +734,12 @@ class StigExec(Layer):
             return False, 0
         if cd.get('ongoing'):
             return (age >= cd.get('first', 99)) and yld > 0, yld
+        # Melon liquidation: one-shot tiles free for strawberries the moment
+        # they hold banked cash (opp harvests all d10 at ~4.8, sells same day
+        # -> $18k spike; waiting for 6.0 smears to d12-13 and the tile sits
+        # occupied). Time value + tile reuse beat the last ~1.5u/plant.
+        if t.get('crop') == 'MELON':
+            return (age >= cd.get('first', 0)) and yld > 0, yld
         mx = cd.get('maxyield', 6)
         maxday = cd.get('maxday', 99)
         first = cd.get('first', 0)
@@ -808,6 +814,15 @@ class StigExec(Layer):
             cu = int(t.get('consecutive_unwatered', 0) or 0)
             if cu >= 1:
                 return 10.0, 'WATER'
+            # Melon window water: every missed window day is -1u cash forever
+            # (one-shot, no catch-up). 7.0 beats routine 5.0, yields to eve
+            # 8.0/HARVEST 8.0. Conflict-free before d12 (first straw eve d12).
+            try:
+                _mage = ctx.day - int(t.get('planted_day', 0) or 0)
+            except Exception:
+                _mage = -1
+            if t.get('crop') == 'MELON' and 6 <= _mage <= 12:
+                return 7.0, 'WATER'
             # Eve pass: today's strawberry production eves outrank routine
             # field work (ties ripe HARVEST 8.0, below hungry FEED 10.0).
             # The bonus needs water AND fert-active on the eve; fert_pays

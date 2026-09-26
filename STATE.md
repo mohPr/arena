@@ -1,11 +1,11 @@
-# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v5)
+# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v6)
 
 Base is a stigmergic executor (StigExec) + DSM-spec macro (Scheduler/MarketEmit,
 byte-identical to the frozen role-based base). Lineage in repo:
 `agent_base.py` -> `var_sched5.py` -> `var_sched6.py` -> `agent_prev_role.py`
 (role-based, 62k) -> STIG v1 (~90k, one-actor-per-tile) -> STIG v2 (same-day
 fert cash) -> STIG v3 (harvest age-gate) -> STIG v4 (fert_pays + fert keep)
--> STIG v5 (eve-water 8.0, this file; closes the v4 revert condition).
+-> STIG v5 (eve-water 8.0) -> STIG v6 (melon program, this file; +42.5k).
 The role-based base is kept as `agent_prev_role.py` for
 A/B only — do not develop on it.
 `FINDINGS.md` + `SPEC.md` are older rate tables; `DSM_OS_SPEC.md` (mined replay
@@ -38,17 +38,17 @@ distilled structure is `DSM_OS_SPEC.md`; `tools/` replays the mining method.
 
 ## Measured numbers (reproduce before changing anything, see RUN.md)
 Pinned parity vs PASS dummy (`LINE_FORCE=pinned`, mixed line), seeds 0/1/2 —
-rewards **79451 / 96896 / 109958** (total 286805, v4 was 276150 = +10655):
-- PASS: d5 herd 2C+3S x3; d6 LAND x3; d6 herd>=7 x3.
-- FAIL: d0 plants (STALE); d5 money ~$200-500 vs 634-901; d10 money<2500 x3;
-  d12 ~$2k vs $8k; d15 vs $20k (curve still shifted late).
-- Competitive screen vs pipe19 pinned 200001-5 (seat 1):
-  **50423/42510/62404/27869/37562 vs v4 52772/38707/57997/29201/31688
-  = +10403 total** (-2349/+3803/+4407/-1332/+5874). See v5 note on 200001.
-- Mechanism (`/tmp/opencode/eve_census.py`, seed 0 pinned, d15-25 straw eves):
-  watered-on-eve 35/59 (59%) -> 46/57 (81%); fert-active snapshot 38 -> 42
-  (carriers pulled along); strawberry eve-window FERTILIZE unchanged ~3/d
-  (all EVE — fert_pays already aimed, v5 aims the water).
+rewards **89112 / 91805 / 105125** (total 286042, v5 was 286805 = flat -763):
+- PASS: d5 herd 2C+3S x3; d6 LAND x3; d6 herd>=7 x3; **d10 money>=2500 x3
+  (FIRST money gate pass — melon spike lands)**.
+- FAIL: d0 plants (STALE); d5 money; d12 ~$2k vs $8k; d15 vs $20k.
+- Competitive screen vs pipe19 pinned 200001-3 (seat 1):
+  **66774/59670/71436 vs v5 50423/42510/62404 = +42543 total**
+  (+16351/+17160/+9032, clean 3/3, 8.5x the bar — biggest variant yet).
+- Mechanism (`/tmp/opencode/melon_trace.py`, seed 0 pinned): d10 ybank/plant
+  3.6->4.1; d10 melon harvests 0-4->5 + sales 12->23u; d11 planting 17
+  (freed tiles -> straw wall); d10-12 wallet dips to ~$0 (investment spree:
+  LAND d10 + H14 + seeds) with no stall/escape (parity flat, gates held).
 - STIG v5 ADOPT NOTE (floor breach, explicit + lottery-documented): 5-seed
   screen +10403, parity +10655, mechanism +22pp, gates held — but 200001 is
   -2349 (breach). Late-trace audit (`/tmp/opencode/late_trace.py`): d05-d12
@@ -70,13 +70,10 @@ rewards **79451 / 96896 / 109958** (total 286805, v4 was 276150 = +10655):
 ## Open stages (the work — all of it is yours)
 1. d6 wave cash: DONE for herd (d6 herd>=7 passes pinned 3/3, unpinned 2/3).
    OPEN for money: d5 ~$200-500 vs $750; d10/d12/d15 bands.
-2. Curve timing: MELON SPIKE DONE (v3 age-gate + DSM recipe: 10 melons,
-   daily window water, no fert, harvest@6, same-day sale). SCALE: DSM d15 =
-   75 stands + 20 head, buys SEEDS ONLY; churn mapped but buy-side REJECTED
-   (cu=1 throttle), wheat unslash REJECTED (-10.4k). EVE PROGRAM DONE (v5):
-   strawberry eve-water 59->81%, 200003 repaired. REMAINING: d5 money
-   (~$200-500 vs $750), d10/d12/d15 money bands (curve still shifted late:
-   money grinds d16+, no d10-15 spike yet).
+2. Curve timing: MELON SPIKE DONE (v3 age-gate + v6 program: d10 money
+   PASSES, +42.5k). SCALE: opp d15 = 57 plants + 17 head (32-33 STRAW);
+   ours post-v6 ~50 + spree. REMAINING: d5 money, d12/d15 bands, terminal
+   (opp liquidates d29 to 0 plants + carrot rotation; weeds 0 all game).
 3. d1 wandering: CLOSED as ~$0 lever (PASS-if-idle rule FALSIFIED, do not
    resubmit). Falsifier read confirmed: base d02 money = $301 exactly (vs
    pipe19, seat 1, 200001, pinned); idle variant = $202. REJECTED at mechanism
@@ -106,6 +103,11 @@ rewards **79451 / 96896 / 109958** (total 286805, v4 was 276150 = +10655):
   post-d9 pocket fert (phantom bank trips). My d1-trip kept (pre-d9 bank
   path). Interacts with v3 age-gate (complementary: gate blocks harvest
   trap, pays blocks fert waste). Screen +10253 (see measured numbers).
+- Melon program (STIG v6, `ripe()` + `plant_need`): (1) in-window melons
+  (age 6-12) unwatered score 7.0 (above routine 5.0, below eve/HARVEST 8.0;
+  conflict-free pre-d12); (2) melon ripe = age>=10 with any bank (liquidate
+  d0-cohort d10, d1-cohort d11 — time value + tile reuse beat waiting for
+  6.0). Sales follow via shed stock + 6-batches. Screen +42543 (see above).
 - Eve-water 8.0 (STIG v5, `prod_eve()` + `plant_need`): unwatered strawberry
   on a production eve scores 8.0 (ties ripe HARVEST, below hungry FEED 10.0).
   Engine: ongoing ticks +1/eve, +1 more iff watered-while-fert-active; fert
