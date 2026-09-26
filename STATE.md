@@ -327,3 +327,19 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
   buy-caps negative (churn is productive: fed animal ~$125-155/d on ~$50
   feed); trickling sales monotonically worse (shed cap discards); 13 hands
   -839 (flat), 14+ catastrophic (fib+slots+collisions). Nothing over t=2.
+- WALK DIRECTION EXHAUSTED 2026-09-26: every move class measured transactional
+  (mid/late supply-shuttles = wheat-out/produce-in; d0-d1 empties =
+  wheat/delivery runs); load size kanban-pinned by shed cap (big-carry fail
+  stands); drift purpose-full.
+- var_drift2 REJECTED (drift-to-shed gated on shed_purpose: bankable/wheat-
+  topup/animal-pickup/fert-load, else PASS): purpose gate almost never binds
+  (walks d0-15 2131->2076, -2.6%; PICKUPs byte-identical 222); solo -3.8k/16
+  t=-1.46 wins 3/16. The d0-d1 "oscillation" was delivery runs, not waste.
+- DECAY MEASURED 2026-09-26 (base 200001): 8-22 ripe-unharvested one-shots
+  stand every dawn from d2 (policy waits yld>=mx; engine banks stop at
+  maxday). past-maxday only 0-5/d — most decay happens intraday.
+- var_decay REJECTED (ripe age>=maxday even unwatered, harvest-first):
+  solo -12.5k/16 t=-3.66 wins 3/16; parity gates d6/d10/d12/d15 ALL FAIL.
+  Mechanism: HARVEST 8.0 spent on partial wheat crowds out wave-critical
+  work (priority crowding); decay weeds (DIG 1.0) were the cheaper problem.
+  LESSON: 8.0-priority slots are the scarcest resource; spend only on cash.
