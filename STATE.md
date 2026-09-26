@@ -1,11 +1,12 @@
-# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v6)
+# STATE — current truth, 2026-09-26 (base = `agent_current.py`, STIG v7)
 
 Base is a stigmergic executor (StigExec) + DSM-spec macro (Scheduler/MarketEmit,
 byte-identical to the frozen role-based base). Lineage in repo:
 `agent_base.py` -> `var_sched5.py` -> `var_sched6.py` -> `agent_prev_role.py`
 (role-based, 62k) -> STIG v1 (~90k, one-actor-per-tile) -> STIG v2 (same-day
 fert cash) -> STIG v3 (harvest age-gate) -> STIG v4 (fert_pays + fert keep)
--> STIG v5 (eve-water 8.0) -> STIG v6 (melon program, this file; +42.5k).
+-> STIG v5 (eve-water 8.0) -> STIG v6 (melon program) -> STIG v7 (seed-pile
+cut, this file; +3.7k/6 perfect-control).
 The role-based base is kept as `agent_prev_role.py` for
 A/B only — do not develop on it.
 `FINDINGS.md` + `SPEC.md` are older rate tables; `DSM_OS_SPEC.md` (mined replay
@@ -38,17 +39,17 @@ distilled structure is `DSM_OS_SPEC.md`; `tools/` replays the mining method.
 
 ## Measured numbers (reproduce before changing anything, see RUN.md)
 Pinned parity vs PASS dummy (`LINE_FORCE=pinned`, mixed line), seeds 0/1/2 —
-rewards **89112 / 91805 / 105125** (total 286042, v5 was 286805 = flat -763):
-- PASS: d5 herd 2C+3S x3; d6 LAND x3; d6 herd>=7 x3; **d10 money>=2500 x3
-  (FIRST money gate pass — melon spike lands)**.
+rewards **89412 / 92105 / 105625** (total 287142, v6 was 286042 = +1100):
+- PASS: d5 herd 2C+3S x3; d6 LAND x3; d6 herd>=7 x3; d10 money>=2500 x3.
 - FAIL: d0 plants (STALE); d5 money; d12 ~$2k vs $8k; d15 vs $20k.
-- Competitive screen vs pipe19 pinned 200001-3 (seat 1):
-  **66774/59670/71436 vs v5 50423/42510/62404 = +42543 total**
-  (+16351/+17160/+9032, clean 3/3, 8.5x the bar — biggest variant yet).
-- Mechanism (`/tmp/opencode/melon_trace.py`, seed 0 pinned): d10 ybank/plant
-  3.6->4.1; d10 melon harvests 0-4->5 + sales 12->23u; d11 planting 17
-  (freed tiles -> straw wall); d10-12 wallet dips to ~$0 (investment spree:
-  LAND d10 + H14 + seeds) with no stall/escape (parity flat, gates held).
+- Competitive screen vs pipe19 pinned 200001-6 (seat 1, 6-seed standard):
+  **326207 vs v6 322459 = +3748 abs** (+3903 margin; per-seed
+  -200/+400/+2548/+500/+500/+0 — 5/6 positive, none worse than -200).
+  Opp tickets IDENTICAL both halves (362991/500265 vs 362991/500420):
+  the cut barely moves the field so RNG holds constant (perfect control).
+- Mechanism (`/tmp/opencode/census_seed.py`, seed 0 pinned): stands identical
+  to v6 (d15 S25/W13/C9/T9, d20 S22, d25 S16); buys 8-9 straw/d -> ~3.7/d
+  against ~2/d replacement need (weeds); drawer pile stops growing.
 - STIG v5 ADOPT NOTE (floor breach, explicit + lottery-documented): 5-seed
   screen +10403, parity +10655, mechanism +22pp, gates held — but 200001 is
   -2349 (breach). Late-trace audit (`/tmp/opencode/late_trace.py`): d05-d12
@@ -222,3 +223,27 @@ while a variant draws YARN d9 (late switch to sheep line). Consequences:
   through it; micro-fixes (~$500) are unmeasurable — park them, swing big.
   A mechanism can be CORRECT (coverage/yields improve on trace) and still
   fail the screen; that is the bar doing its job, not a wrong diagnosis.
+- LOTTERY-NEUTRAL STANDARD (2026-09-26, binding after bankonly): 200001-3 are
+  CHERRY seeds (v6 scores 197.9k there vs 124.6k on 200004-6 — ±35k/game
+  lottery scale). Any field-divergent variant is penalized there (fresh
+  tickets vs base's lucky ones). Adoption standard is now 6-seed totals
+  (200001-6) absolute + margin; adopt iff mechanism verified AND 6-seed not
+  contradictory AND parity holds. Minimal-field variants (seed quotas) hold
+  opp tickets IDENTICAL (perfect control) — small clean gains adoptable.
+- STAGE-4B REJECTIONS (all vs v6, all pinned): purity S32/W24 (h2h margin -4k
+  nose, parity +3k nose; C/T are cheap-labor fillers, not dead weight);
+  melon12 12-d0-melons (parity -26.5k REAL: htgt still bought 2C+3S d0 so
+  melon seeds capped at ~7 by wallet; herd-deferral retry broke the d6 wave);
+  nogeese (parity +17.7k BUT h2h 6-seed abs -9.3k/margin +10k = nose; eggs pay
+  for their labor; d6 herd gate fails — gate discipline holds the reject);
+  bankonly wheat-out-of-bank (parity +8k lottery; h2h 6-seed -48.6k/-68.8k
+  CLEAN reject); big-carry 12-loads (parity -65%: 12-wheat pockets trip
+  BANK_LOAD=8 -> infinite shed shuttle PASS 133/FEED 7; LESSON: small carry
+  is a kanban pull — big loads overstock the 100-cap shed -> destruction);
+  wheat-churn fix (parity flat, h2h -102k UNIFORM: reserve/fragile across
+  shop draws; ALSO found + fixed the dawn-crisis bug — hands are 0 at dawn
+  so reserve collapsed daily — fix retained? NO: whole variant rejected,
+  bugfix parked inside it).
+- STIG v7 (seed-pile cut): d13+ S(STRAW) 8->3 (+4->+2 pulse). Drawer held
+  $2420 dead (17 straw seeds) while stands SHRINK by policy. +3.7k/6-seed,
+  perfect RNG control, parity +1.1k. Smallest adoption; hygiene compounds.

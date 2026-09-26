@@ -316,8 +316,10 @@ def shopping(day, ctx, st):
         H(12 if day < 26 else 10)
         S('WHEAT', 12); S('CARROT', 8); P('WHEAT', 16)
         if day % 2 == 0: P('FERTILIZER', 16)
-        S('TOMATO', 4); S('STRAWBERRY', 8)
-        if day % 3 == 0: S('STRAWBERRY', 4)
+        # SEEDPILE: bought 8-9/d, planted ~2/d (stands SHRINK 25->16 by policy),
+        # drawer 17 straw ($1700) d15. Replacement need ~1-2/d (weeds).
+        S('TOMATO', 4); S('STRAWBERRY', 3)
+        if day % 3 == 0: S('STRAWBERRY', 2)
     elif day >= 28:
         H(6)
         # d28-29: final bank-rush hands. Hands are DAY-LABOR (farm['hands']
